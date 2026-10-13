@@ -929,3 +929,200 @@ def product_movement(request):
         'dead_stock': dead_stock,
         'all_products': movers,
     })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def pharmacy_reports(request):
+    """
+    Reports tailored to pharmacies / drug shops / grocery:
+      - Expiry forecast (30/60/90 days)
+      - Stock aging
+      - Dead stock value
+      - Top selling products
+      - Slow-moving + near-expiry
+      - Supplier concentration
+    """
+    from apps.inventory.models import Product, Supplier
+
+    shop = GarageSettings.load()
+    currency = shop.currency_symbol or shop.currency_code or 'UGX'
+    today = timezone.localtime().date()
+    thirty = today + timedelta(days=30)
+    sixty = today + timedelta(days=60)
+    ninety = today + timedelta(days=90)
+
+    products = list(Product.all_objects.filter(tenant=shop.tenant))
+
+    # ---- Expiry forecast ----
+    def in_window(p, start, end):
+        if not p.expiry_date:
+            return False
+        return start <= p.expiry_date <= end
+
+    expired = [p for p in products if p.expiry_date and p.expiry_date < today]
+    exp_30 = [p for p in products if in_window(p, today, thirty)]
+    exp_60 = [p for p in products if in_window(p, thirty + timedelta(days=1), sixty)]
+    exp_90 = [p for p in products if in_window(p, sixty + timedelta(days=1), ninety)]
+
+    def sum_value(arr):
+        return float(sum((p.stock_value for p in arr), Decimal('0')))
+
+    expiry_forecast = {
+        'expired': {'count': len(expired), 'value': sum_value(expired)},
+        'days_0_30': {'count': len(exp_30), 'value': sum_value(exp_30)},
+        'days_31_60': {'count': len(exp_60), 'value': sum_value(exp_60)},
+        'days_61_90': {'count': len(exp_90), 'value': sum_value(exp_90)},
+        'total_at_risk': sum_value(expired + exp_30),
+    }
+
+    # ---- List of items expiring soon ----
+    expiring_soon = sorted(
+        [p for p in products if p.expiry_date and p.expiry_date <= ninety],
+        key=lambda p: p.expiry_date,
+    )
+    expiring_soon_data = [
+        {
+            'id': p.id,
+            'name': p.name,
+            'sku': p.sku,
+            'batch_number': p.batch_number or '',
+            'expiry_date': p.expiry_date.isoformat(),
+            'days_left': (p.expiry_date - today).days,
+            'quantity': p.quantity,
+            'stock_value': float(p.stock_value),
+            'cost_price': float(p.cost_price),
+        }
+        for p in expiring_soon[:50]
+    ]
+
+    # ---- Stock aging ----
+    # Classify by how long the product has been in the inventory (based on last purchase date)
+    # Fallback: use created_at
+    aging_buckets = {'0_30': 0, '31_90': 0, '91_180': 0, 'over_180': 0}
+    for p in products:
+        if not p.created_at:
+            continue
+        days = (today - p.created_at.date()).days
+        if days <= 30:
+            aging_buckets['0_30'] += 1
+        elif days <= 90:
+            aging_buckets['31_90'] += 1
+        elif days <= 180:
+            aging_buckets['91_180'] += 1
+        else:
+            aging_buckets['over_180'] += 1
+
+    # ---- Top selling products (last 30 days) ----
+    from apps.sales.models import SaleItem, Sale
+    from django.db.models import Sum as DjSum
+
+    thirty_ago = timezone.now() - timedelta(days=30)
+    top_sales = (
+        SaleItem.objects.filter(
+            sale__tenant=shop.tenant,
+            sale__created_at__gte=thirty_ago,
+        )
+        .values('product__id', 'product__name', 'product__sku')
+        .annotate(
+            total_qty=DjSum('quantity'),
+            total_revenue=DjSum('unit_price'),
+        )
+        .order_by('-total_qty')[:20]
+    )
+    top_selling = [
+        {
+            'id': row['product__id'],
+            'name': row['product__name'],
+            'sku': row['product__sku'],
+            'qty_sold': row['total_qty'],
+            'revenue': float(row['total_revenue'] or 0),
+        }
+        for row in top_sales
+    ]
+
+    # ---- Dead stock (no sales in last 90 days) ----
+    ninety_ago = timezone.now() - timedelta(days=90)
+    recent_product_ids = set(
+        SaleItem.objects.filter(
+            sale__tenant=shop.tenant,
+            sale__created_at__gte=ninety_ago,
+        )
+        .values_list('product_id', flat=True)
+        .distinct()
+    )
+    dead_stock = sorted(
+        [p for p in products if p.id not in recent_product_ids and p.quantity > 0],
+        key=lambda p: p.stock_value,
+        reverse=True,
+    )
+    dead_stock_data = [
+        {
+            'id': p.id,
+            'name': p.name,
+            'sku': p.sku,
+            'quantity': p.quantity,
+            'stock_value': float(p.stock_value),
+            'expiry_date': p.expiry_date.isoformat() if p.expiry_date else None,
+            'days_since_created': (today - p.created_at.date()).days if p.created_at else None,
+        }
+        for p in dead_stock[:20]
+    ]
+
+    # ---- Supplier concentration ----
+    suppliers_map = {}
+    for p in products:
+        if p.supplier_id:
+            key = str(p.supplier_id)
+            if key not in suppliers_map:
+                suppliers_map[key] = {
+                    'id': p.supplier_id,
+                    'name': p.supplier.name if p.supplier else '—',
+                    'product_count': 0,
+                    'stock_value': Decimal('0'),
+                }
+            suppliers_map[key]['product_count'] += 1
+            suppliers_map[key]['stock_value'] += p.stock_value
+
+    supplier_concentration = sorted(
+        [
+            {
+                'name': v['name'],
+                'product_count': v['product_count'],
+                'stock_value': float(v['stock_value']),
+            }
+            for v in suppliers_map.values()
+        ],
+        key=lambda x: x['stock_value'],
+        reverse=True,
+    )
+
+    # ---- Stock value summary ----
+    total_value = float(
+        sum((p.stock_value for p in products), Decimal('0'))
+    )
+    total_products = len(products)
+    total_units = sum(p.quantity for p in products)
+
+    return Response({
+        'business_name': shop.name,
+        'currency': currency,
+        'today': today.isoformat(),
+        'kpis': {
+            'total_products': total_products,
+            'total_units': total_units,
+            'total_stock_value': total_value,
+            'expiring_30d_value': expiry_forecast['days_0_30']['value'],
+            'expired_value': expiry_forecast['expired']['value'],
+            'dead_stock_value': sum_value(
+                [p for p in products if p.id not in recent_product_ids and p.quantity > 0]
+            ),
+            'total_at_risk': expiry_forecast['total_at_risk'],
+        },
+        'expiry_forecast': expiry_forecast,
+        'expiring_soon': expiring_soon_data,
+        'stock_aging': aging_buckets,
+        'top_selling': top_selling,
+        'dead_stock': dead_stock_data,
+        'supplier_concentration': supplier_concentration[:10],
+    })

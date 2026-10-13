@@ -10,7 +10,7 @@ services:
     branch: main
     rootDir: backend
     buildCommand: "./build.sh"
-    startCommand: "gunicorn garage.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
+    startCommand: "gunicorn platform_config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
     healthCheckPath: /api/auth/login/
     envVars:
       - key: PYTHON_VERSION
@@ -43,3 +43,14 @@ services:
         value: "20.11.1"
       - key: NEXT_PUBLIC_API_URL
         value: "https://garage-backend.onrender.com/api"
+
+
+  - type: cron
+    name: daily-digest
+    runtime: python
+    schedule: "0 6 * * *"    # 6 AM UTC = 9 AM EAT
+    buildCommand: pip install -r requirements.txt
+    startCommand: python manage.py send_daily_digest
+    rootDir: backend
+    envVars:
+      - fromGroup: garage-backend-env

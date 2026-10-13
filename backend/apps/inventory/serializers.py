@@ -1,4 +1,5 @@
 from rest_framework import serializers
+
 from .models import Category, Supplier, Product, StockMovement, StockReconciliation
 
 
@@ -6,12 +7,14 @@ class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
         fields = '__all__'
+        read_only_fields = ['tenant']
 
 
 class SupplierSerializer(serializers.ModelSerializer):
     class Meta:
         model = Supplier
         fields = '__all__'
+        read_only_fields = ['tenant']
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -21,6 +24,7 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = '__all__'
+        read_only_fields = ['tenant']
 
     def create(self, validated_data):
         """Allow 'quantity' on create, and log an initial StockMovement."""
@@ -31,6 +35,7 @@ class ProductSerializer(serializers.ModelSerializer):
         if quantity:
             request = self.context.get('request')
             StockMovement.objects.create(
+                tenant=product.tenant,
                 product=product,
                 movement_type='in',
                 quantity=quantity,
@@ -53,7 +58,7 @@ class StockMovementSerializer(serializers.ModelSerializer):
     class Meta:
         model = StockMovement
         fields = '__all__'
-        read_only_fields = ['user', 'created_at']
+        read_only_fields = ['tenant', 'user', 'created_at']
 
 
 class StockReconciliationSerializer(serializers.ModelSerializer):
@@ -63,4 +68,4 @@ class StockReconciliationSerializer(serializers.ModelSerializer):
     class Meta:
         model = StockReconciliation
         fields = '__all__'
-        read_only_fields = ['user', 'difference', 'created_at', 'system_quantity']
+        read_only_fields = ['tenant', 'user', 'difference', 'created_at', 'system_quantity']

@@ -5,8 +5,17 @@ export function useUser() {
   const [user, setUser] = useState(null);
 
   useEffect(() => {
-    const raw = typeof window !== 'undefined' ? localStorage.getItem('user') : null;
-    if (raw) setUser(JSON.parse(raw));
+    const read = () => {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('user') : null;
+      setUser(raw ? JSON.parse(raw) : null);
+    };
+    read();
+    // Update when another tab changes the user
+    const onStorage = (e) => {
+      if (e.key === 'user') read();
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }, []);
 
   return user;

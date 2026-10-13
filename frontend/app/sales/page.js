@@ -8,10 +8,15 @@ import api from '@/lib/api';
 import { formatMoney } from '@/lib/format';
 import { usePagination } from '@/lib/usePagination';
 import { useToast } from '@/components/Toast';
+import { useTenantContext } from '@/lib/useTenantContext';
 import { openWhatsApp, renderTemplate, DEFAULT_TEMPLATES } from '@/lib/whatsapp';
 
 export default function SalesPage() {
   const toast = useToast();
+  const { enabled_features } = useTenantContext();
+  const isPharmacy = enabled_features.includes('batch_tracking') ||
+                     enabled_features.includes('expiry');
+
   const [sales, setSales] = useState([]);
   const [products, setProducts] = useState([]);
   const [settings, setSettings] = useState({});
@@ -20,11 +25,12 @@ export default function SalesPage() {
     reference: '', customer_name: '', customer_phone: '',
     payment_type: 'cash', amount_paid: '', notes: '',
   });
-  const [items, setItems] = useState([{ product: '', quantity: 1, unit_price: 0 }]);
+  const [items, setItems] = useState([
+    { product: '', quantity: 1, unit_price: 0 },
+  ]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Filters
   const [search, setSearch] = useState('');
   const [filterPayment, setFilterPayment] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -42,8 +48,12 @@ export default function SalesPage() {
   };
   useEffect(() => { load(); }, []);
 
-  const addItem = () => setItems([...items, { product: '', quantity: 1, unit_price: 0 }]);
-  const removeItem = (i) => setItems(items.filter((_, idx) => idx !== i));
+  const addItem = () =>
+    setItems([...items, { product: '', quantity: 1, unit_price: 0 }]);
+
+  const removeItem = (i) =>
+    setItems(items.filter((_, idx) => idx !== i));
+
   const updateItem = (i, field, value) => {
     const copy = [...items];
     copy[i][field] = value;
@@ -53,9 +63,11 @@ export default function SalesPage() {
     }
     setItems(copy);
   };
-  const total = items.reduce((s, i) => s + (i.quantity || 0) * (i.unit_price || 0), 0);
 
-  // Auto-fill amount_paid based on payment type
+  const total = items.reduce(
+    (s, i) => s + (i.quantity || 0) * (i.unit_price || 0), 0
+  );
+
   useEffect(() => {
     if (form.payment_type === 'cash') {
       setForm((f) => ({ ...f, amount_paid: total.toString() }));
@@ -73,7 +85,8 @@ export default function SalesPage() {
 
   const resetForm = () => {
     setForm({
-      reference: generateRef(), customer_name: '', customer_phone: '',
+      reference: generateRef(),
+      customer_name: '', customer_phone: '',
       payment_type: 'cash', amount_paid: '', notes: '',
     });
     setItems([{ product: '', quantity: 1, unit_price: 0 }]);
@@ -85,28 +98,20 @@ export default function SalesPage() {
     setError('');
     if (items.some((i) => !i.product || i.quantity <= 0)) {
       const msg = 'Please pick a product and quantity for every line.';
-      setError(msg);
-      toast.error(msg);
-      return;
+      setError(msg); toast.error(msg); return;
     }
     const paid = parseFloat(form.amount_paid || 0);
     if (form.payment_type === 'cash' && paid < total) {
-      const msg = `Cash sales must be fully paid. Total is ${money(total)}, amount paid is ${money(paid)}.`;
-      setError(msg);
-      toast.error(msg);
-      return;
+      const msg = `Cash sales must be fully paid. Total is ${money(total)}.`;
+      setError(msg); toast.error(msg); return;
     }
     if (form.payment_type === 'credit' && paid > 0) {
-      const msg = 'Credit sales should have Amount Paid = 0. Use Partial for part payments.';
-      setError(msg);
-      toast.error(msg);
-      return;
+      const msg = 'Credit sales should have Amount Paid = 0.';
+      setError(msg); toast.error(msg); return;
     }
     if (form.payment_type === 'partial' && (paid <= 0 || paid >= total)) {
       const msg = 'Partial payments must be greater than 0 and less than the total.';
-      setError(msg);
-      toast.error(msg);
-      return;
+      setError(msg); toast.error(msg); return;
     }
 
     setSaving(true);
@@ -126,9 +131,10 @@ export default function SalesPage() {
     } catch (err) {
       const data = err.response?.data;
       const msg = data?.detail || (typeof data === 'object' ? JSON.stringify(data) : 'Could not save sale.');
-      setError(msg);
-      toast.error(msg);
-    } finally { setSaving(false); }
+      setError(msg); toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const printReceipt = async (saleId) => {
@@ -155,10 +161,10 @@ export default function SalesPage() {
       amount: money(sale.total_amount),
       paid: money(sale.amount_paid),
       balance: money(sale.balance),
-      business: settings.name || 'our garage',
+      business: settings.name || 'our business',
     });
     openWhatsApp(sale.customer_phone, message);
-    toast.success(`Opening WhatsApp for ${sale.customer_name || 'customer'}…`);
+    toast.success(`Opening WhatsApp…`);
   };
 
   const money = (n) => formatMoney(n, currency);
@@ -168,18 +174,15 @@ export default function SalesPage() {
     return 'badge badge-red';
   };
 
-  // Filtering
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return sales.filter((s) => {
       if (filterPayment !== 'all' && s.payment_type !== filterPayment) return false;
       const debtBal = parseFloat(s.debt_balance || 0);
       const liveStatus =
-        s.debt_status === 'paid' || (debtBal <= 0)
-          ? 'paid'
-          : s.debt_status === 'partial'
-            ? 'partial'
-            : 'unpaid';
+        s.debt_status === 'paid' || (debtBal <= 0) ? 'paid'
+        : s.debt_status === 'partial' ? 'partial'
+        : 'unpaid';
       if (filterStatus !== 'all' && liveStatus !== filterStatus) return false;
       if (!q) return true;
       return (
@@ -198,6 +201,7 @@ export default function SalesPage() {
         <h1 className="text-2xl font-bold text-slate-900">Sales</h1>
         <p className="text-sm text-slate-500 mt-1">
           Record new sales and print or WhatsApp receipts.
+          {isPharmacy && ' Batch numbers and expiry dates appear on receipts.'}
         </p>
       </div>
 
@@ -242,38 +246,54 @@ export default function SalesPage() {
             <p className="text-sm font-semibold text-slate-700">Items</p>
             <button type="button" onClick={addItem} className="btn btn-secondary btn-sm">+ Add item</button>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-3">
             {items.map((it, i) => {
               const selected = products.find((p) => p.id === parseInt(it.product));
               const outOfStock = selected && it.quantity > selected.quantity;
               return (
-                <div key={i} className="grid grid-cols-12 gap-2 items-end">
-                  <div className="col-span-12 md:col-span-5">
-                    <label className="md:hidden">Product</label>
-                    <ProductPicker products={products} value={it.product} currency={currency}
-                      onChange={(id, product) => {
-                        updateItem(i, 'product', id);
-                        if (product) updateItem(i, 'unit_price', parseFloat(product.selling_price));
-                      }} />
-                  </div>
-                  <div className="col-span-4 md:col-span-2"><label className="md:hidden">Qty</label>
-                    <input type="number" min="1" value={it.quantity}
-                      onChange={(e) => updateItem(i, 'quantity', parseInt(e.target.value) || 0)} required /></div>
-                  <div className="col-span-4 md:col-span-2"><label className="md:hidden">Unit Price</label>
-                    <input type="number" step="0.01" value={it.unit_price}
-                      onChange={(e) => updateItem(i, 'unit_price', parseFloat(e.target.value) || 0)} required /></div>
-                  <div className="col-span-3 md:col-span-2 text-right"><label className="md:hidden">Subtotal</label>
-                    <p className="py-2 text-sm font-semibold">{money((it.quantity || 0) * (it.unit_price || 0))}</p></div>
-                  <div className="col-span-1 flex justify-end">
-                    {items.length > 1 && (
-                      <button type="button" className="btn btn-danger btn-sm" onClick={() => removeItem(i)}>✕</button>
+                <div key={i} className="p-3 border border-slate-200 rounded-lg">
+                  <div className="grid grid-cols-12 gap-2 items-end">
+                    <div className="col-span-12 md:col-span-5">
+                      <label className="md:hidden">Product</label>
+                      <ProductPicker
+                        products={products}
+                        value={it.product}
+                        currency={currency}
+                        onChange={(id, product) => {
+                          updateItem(i, 'product', id);
+                          if (product) updateItem(i, 'unit_price', parseFloat(product.selling_price));
+                        }}
+                      />
+                      {selected && isPharmacy && (selected.batch_number || selected.expiry_date) && (
+                        <p className="text-xs text-blue-600 mt-1">
+                          {selected.batch_number && <>Batch: <b>{selected.batch_number}</b></>}
+                          {selected.batch_number && selected.expiry_date && ' · '}
+                          {selected.expiry_date && <>Exp: {selected.expiry_date}</>}
+                        </p>
+                      )}
+                    </div>
+                    <div className="col-span-4 md:col-span-2">
+                      <label className="md:hidden">Qty</label>
+                      <input type="number" min="1" value={it.quantity}
+                        onChange={(e) => updateItem(i, 'quantity', parseInt(e.target.value) || 0)} required /></div>
+                    <div className="col-span-4 md:col-span-2">
+                      <label className="md:hidden">Unit Price</label>
+                      <input type="number" step="0.01" value={it.unit_price}
+                        onChange={(e) => updateItem(i, 'unit_price', parseFloat(e.target.value) || 0)} required /></div>
+                    <div className="col-span-3 md:col-span-2 text-right">
+                      <label className="md:hidden">Subtotal</label>
+                      <p className="py-2 text-sm font-semibold">{money((it.quantity || 0) * (it.unit_price || 0))}</p></div>
+                    <div className="col-span-1 flex justify-end">
+                      {items.length > 1 && (
+                        <button type="button" className="btn btn-danger btn-sm" onClick={() => removeItem(i)}>✕</button>
+                      )}
+                    </div>
+                    {outOfStock && (
+                      <div className="col-span-12 text-xs text-red-600">
+                        ⚠ Only {selected.quantity} in stock for {selected.name}.
+                      </div>
                     )}
                   </div>
-                  {outOfStock && (
-                    <div className="col-span-12 text-xs text-red-600">
-                      ⚠ Only {selected.quantity} in stock for {selected.name}.
-                    </div>
-                  )}
                 </div>
               );
             })}
@@ -294,7 +314,6 @@ export default function SalesPage() {
         </div>
       </form>
 
-      {/* Filters */}
       <div className="card mb-4">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <div className="md:col-span-2"><label>Search</label>
@@ -348,7 +367,6 @@ export default function SalesPage() {
               } else {
                 liveStatus = 'paid';
               }
-
               return (
                 <tr key={s.id}>
                   <td className="font-mono text-xs">{s.reference}</td>
@@ -373,14 +391,10 @@ export default function SalesPage() {
                   </td>
                   <td className="text-right whitespace-nowrap">
                     <button className="btn btn-secondary btn-sm mr-1"
-                      onClick={() => printReceipt(s.id)} title="Open printable receipt">
-                      🧾
-                    </button>
+                      onClick={() => printReceipt(s.id)} title="Open printable receipt">🧾</button>
                     {s.customer_phone && (
                       <button className="btn btn-success btn-sm"
-                        onClick={() => sendReceiptWhatsApp(s)} title="Send receipt via WhatsApp">
-                        💬
-                      </button>
+                        onClick={() => sendReceiptWhatsApp(s)} title="Send via WhatsApp">💬</button>
                     )}
                   </td>
                 </tr>

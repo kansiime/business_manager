@@ -8,6 +8,8 @@ from .views import (
     AuditLogViewSet,
     garage_settings,
     public_settings,
+    available_roles,
+    my_pages,
 )
 
 router = DefaultRouter()
@@ -19,5 +21,7 @@ urlpatterns = [
     path('refresh/', TokenRefreshView.as_view()),
     path('settings/', garage_settings),
     path('public-settings/', public_settings),
+    path('roles/', available_roles),
+    path('my-pages/', my_pages),
     path('', include(router.urls)),
 ]

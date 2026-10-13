@@ -1,8 +1,57 @@
-.DS_Store
-*.log
-.env
-.env.local
-venv/
-node_modules/
+# ─── Python / Django ────────────────────────────────
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Django
+*.log
+db.sqlite3
+db.sqlite3-journal
+/backend/media/
+/backend/staticfiles/
+/backend/static_root/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.env
+secrets.json
+*.pem
+*.key
+
+# ─── Node / Next.js ─────────────────────────────────
+node_modules/
+.pnp
+.pnp.js
 .next/
+out/
+build/
+dist/
+.vercel/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# ─── Misc ───────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+coverage/
+.coverage
+htmlcov/
+.coverage.*
+coverage.xml

@@ -1,24 +1,58 @@
-# Garage Management System
 
-A comprehensive garage management system built with Django REST Framework, Next.js, and PostgreSQL.
+- **One Django backend**, one PostgreSQL database.
+- **Tenant isolation by tenant ID**, not separate databases — every
+  tenant-scoped model carries a `tenant_id` FK and every query is filtered by
+  the authenticated user's tenant.
+- **JWT auth** with a `tenant_id` claim, so the backend can reject
+  cross-tenant requests even before the DB query runs.
+- **Feature flags** stored on the `BusinessType` model, overridable per tenant
+  via `Tenant.feature_overrides`.
 
-## Features
+---
 
-- 🔐 Role-based access control (Admin, Manager, Cashier, Storekeeper)
-- 📦 Inventory management with stock movements and low-stock alerts
-- 💰 Sales with receipts (PDF) and automatic stock deduction
-- 🛒 Purchases from suppliers with automatic stock-in on receive
-- 🧾 Debts tracking (receivables & payables) with payment history
-- ⚖️ Stock reconciliation with audit trail
-- 📊 Reports with charts — PDF & Excel export
-- 👥 User management and full audit log
-- 💵 Configurable currency (UGX, KES, USD, ...) and business details
-- 📱 Responsive UI
+## Tech stack
 
-## Tech Stack
+**Backend**
+- Python 3.13
+- Django 5.0
+- Django REST Framework
+- djangorestframework-simplejwt
+- PostgreSQL
+- python-dotenv
 
-- **Backend:** Django 5, Django REST Framework, SimpleJWT, ReportLab, openpyxl
-- **Frontend:** Next.js 14 (App Router), React, Tailwind CSS, Recharts
-- **Database:** PostgreSQL (works with Neon, RDS, or self-hosted)
+**Frontend**
+- Next.js 14 (App Router)
+- React 18
+- Tailwind CSS
+- Recharts
+- Axios
 
-## Project Structure
+---
+
+## Local development
+
+### Prerequisites
+
+- Python 3.13+
+- Node.js 18+
+- PostgreSQL 14+
+
+### Backend
+
+```bash
+cd backend
+
+python -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
+
+pip install -r requirements.txt
+
+cp .env.example .env
+# edit .env with your DB credentials and a fresh SECRET_KEY
+
+# create the database if it doesn't exist
+createdb business_db
+
+python manage.py migrate
+python manage.py createsuperuser
+python manage.py runserver
