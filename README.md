@@ -1,58 +1,72 @@
+# Business Manager
 
-- **One Django backend**, one PostgreSQL database.
-- **Tenant isolation by tenant ID**, not separate databases — every
-  tenant-scoped model carries a `tenant_id` FK and every query is filtered by
-  the authenticated user's tenant.
-- **JWT auth** with a `tenant_id` claim, so the backend can reject
-  cross-tenant requests even before the DB query runs.
-- **Feature flags** stored on the `BusinessType` model, overridable per tenant
-  via `Tenant.feature_overrides`.
+A multi-tenant business management platform for small and medium businesses in
+East Africa. One backend serves clinics, pharmacies, agro-supply shops,
+garages, retail stores, restaurants, boutiques, and more — each tenant gets
+only the modules their business type needs.
 
 ---
 
-## Tech stack
+## Table of contents
 
-**Backend**
-- Python 3.13
-- Django 5.0
-- Django REST Framework
-- djangorestframework-simplejwt
-- PostgreSQL
-- python-dotenv
-
-**Frontend**
-- Next.js 14 (App Router)
-- React 18
-- Tailwind CSS
-- Recharts
-- Axios
+- [What it does](#what-it-does)
+- [Business types & features](#business-types--features)
+- [Architecture](#architecture)
+- [Tech stack](#tech-stack)
+- [Local development](#local-development)
+- [Environment variables](#environment-variables)
+- [Project structure](#project-structure)
+- [Multi-tenancy model](#multi-tenancy-model)
+- [Roles](#roles)
+- [Deployment](#deployment)
+- [License](#license)
 
 ---
 
-## Local development
+## What it does
 
-### Prerequisites
+Each tenant is one business. The platform gives them:
 
-- Python 3.13+
-- Node.js 18+
-- PostgreSQL 14+
+- **Point of sale** — record sales, take cash / mobile money / card / insurance.
+- **Inventory** — products, batches, expiry, stock movements, reconciliation.
+- **Purchases** — record supplier orders, receive stock into inventory.
+- **Customers & debts** — customer directory, receivables, payment promises.
+- **Expenses** — operating costs by category.
+- **Returns** — customer and supplier returns.
+- **Reports** — dashboards, financial summaries, exportable reports.
+- **Clinic module** — patients, appointments, consultations, triage, lab orders,
+  prescriptions, invoicing, waiting times.
+- **AI analytics** — top movers, restocking suggestions, business insights.
 
-### Backend
+Every feature is gated by a **feature flag** on the tenant's business type, so
+a garage never sees a "New Visit" button and a clinic never sees a
+"Job Cards" tab.
 
-```bash
-cd backend
+---
 
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
+## Business types & features
 
-pip install -r requirements.txt
+The platform currently ships with these business types:
 
-cp .env.example .env
-# edit .env with your DB credentials and a fresh SECRET_KEY
+| Business type | Features enabled |
+|---|---|
+| **Clinic / Health Center** | inventory, sales, purchases, debts, expenses, returns, reports, customers, prescriptions, appointments, expiry, batch_tracking |
+| **Drug Shop / Pharmacy** | inventory, sales, purchases, debts, expenses, returns, reports, customers, prescriptions, expiry, batch_tracking |
+| **Agro / Farm Supply** | inventory, sales, purchases, debts, expenses, returns, reports, customers, expiry |
+| **Grocery / Mini Mart** | inventory, sales, purchases, debts, expenses, returns, reports, customers, expiry, barcode |
+| **Garage & Auto Repair** | inventory, sales, purchases, debts, expenses, returns, reports, customers, repairs, vehicles |
+| **Wholesale / Distribution** | inventory, sales, purchases, debts, expenses, returns, reports, customers |
+| **Hardware Store** | inventory, sales, purchases, debts, expenses, returns, reports, customers |
+| **Restaurant / Café** | inventory, sales, purchases, debts, expenses, returns, reports, customers, menu, tables |
+| **Salon / Barbershop** | inventory, sales, purchases, debts, expenses, returns, reports, customers, appointments |
+| **Electronics / Phone Shop** | inventory, sales, purchases, debts, expenses, returns, reports, customers, barcode |
+| **Boutique / Fashion** | inventory, sales, purchases, debts, expenses, returns, reports, customers, variants, barcode |
+| **General Retail** | inventory, sales, purchases, debts, expenses, returns, reports, customers, barcode |
 
-# create the database if it doesn't exist
-createdb business_db
+The frontend renders every page, sidebar item, dashboard widget, and
+quick-action button based on the tenant's enabled features — never on a
+hardcoded assumption about the business type.
 
-python manage.py migrate
-python manage.py createsuperuser
-python manage.py runserver
+---
+
+## Architecture
