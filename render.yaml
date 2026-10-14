@@ -10,8 +10,8 @@ services:
     branch: main
     rootDir: backend
     buildCommand: "./build.sh"
-    startCommand: "gunicorn platform_config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
-    healthCheckPath: /api/auth/login/
+    startCommand: "gunicorn platform_config.wsgi:application --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120"
+    healthCheckPath: /api/health/
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"

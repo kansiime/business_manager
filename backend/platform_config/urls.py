@@ -1,7 +1,15 @@
 from django.contrib import admin
+from django.http import JsonResponse
 from django.urls import path, include
 
+
+def health(request):
+    # Render health check: no DB or auth, so it stays fast and never wakes Neon.
+    return JsonResponse({'status': 'ok'})
+
+
 urlpatterns = [
+    path('api/health/', health),
     path('admin/', admin.site.urls),
     path('api/tenants/', include('apps.tenants.urls')),
     path('api/auth/', include('apps.accounts.urls')),

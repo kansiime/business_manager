@@ -15,10 +15,42 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// The free Render backend sleeps when idle and answers 502/503 (or, because
+// Render's error page has no CORS headers, a bare network error) while it
+// starts up. Those requests never reached Django, so retrying is safe.
+const WAKE_DELAYS_MS = [2000, 3000, 5000, 8000, 10000, 15000, 15000];
+
+const isWakingUp = (err) => {
+  const status = err.response?.status;
+  if (status === 502 || status === 503) return true;
+  if (status === 504) return (err.config?.method || 'get') === 'get';
+  return !err.response && err.code === 'ERR_NETWORK';
+};
+
+const setWaking = (waking) => {
+  window.dispatchEvent(new CustomEvent('api:waking', { detail: waking }));
+};
+
 api.interceptors.response.use(
-  (res) => res,
-  (err) => {
+  (res) => {
+    if (typeof window !== 'undefined' && res.config.__wakeAttempt) setWaking(false);
+    return res;
+  },
+  async (err) => {
     if (typeof window === 'undefined') return Promise.reject(err);
+
+    const config = err.config;
+    if (config && isWakingUp(err)) {
+      const attempt = config.__wakeAttempt || 0;
+      if (attempt < WAKE_DELAYS_MS.length) {
+        config.__wakeAttempt = attempt + 1;
+        setWaking(true);
+        await new Promise((r) => setTimeout(r, WAKE_DELAYS_MS[attempt]));
+        return api(config);
+      }
+      setWaking(false);
+    }
+
     const status = err.response?.status;
     const path = window.location.pathname;
 
