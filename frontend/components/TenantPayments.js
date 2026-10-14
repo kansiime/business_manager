@@ -5,6 +5,12 @@ import { formatMoney } from '@/lib/format';
 import { apiErrorMessage } from '@/lib/session';
 import { useToast } from '@/components/Toast';
 
+const PROVIDER_LABELS = {
+  mtn_momo: 'MTN MoMo',
+  flutterwave: 'Flutterwave',
+  manual: 'Manual',
+};
+
 /**
  * Super-admin panel on a business page: payment history plus a form to
  * record a payment received outside Flutterwave (e.g. mobile money sent
@@ -117,8 +123,10 @@ export default function TenantPayments({ tenantId, plans, onRecorded }) {
                   <td>{new Date(p.paid_at || p.created_at).toLocaleDateString()}</td>
                   <td>{p.plan} <span className="text-slate-400">({p.billing_cycle})</span></td>
                   <td className="text-right">{formatMoney(p.amount, p.currency)}</td>
-                  <td className="capitalize">{p.provider}</td>
-                  <td className="capitalize">{p.status}</td>
+                  <td>{PROVIDER_LABELS[p.provider] || p.provider}</td>
+                  <td className="capitalize">
+                    {p.status === 'pending' && p.provider === 'manual' ? 'awaiting confirmation' : p.status}
+                  </td>
                   <td className="text-xs text-slate-500">{p.note || p.tx_ref}</td>
                 </tr>
               ))}

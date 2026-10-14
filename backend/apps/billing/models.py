@@ -41,6 +41,7 @@ class Subscription(models.Model):
     def __str__(self):
         return f"{self.tenant.name} — {self.plan.name}"
 
+
 class Payment(models.Model):
     """
     One attempt to pay for a plan. Created at checkout as `pending`, then
@@ -52,8 +53,10 @@ class Payment(models.Model):
         ('successful', 'Successful'),
         ('failed', 'Failed'),
         ('cancelled', 'Cancelled'),
+        ('rejected', 'Rejected'),        # manual claim the platform admin turned down
     ]
     PROVIDER_CHOICES = [
+        ('mtn_momo', 'MTN Mobile Money'),
         ('flutterwave', 'Flutterwave'),
         ('manual', 'Manual'),
     ]
@@ -71,6 +74,7 @@ class Payment(models.Model):
     provider = models.CharField(max_length=20, choices=PROVIDER_CHOICES)
     tx_ref = models.CharField(max_length=100, unique=True)
     provider_tx_id = models.CharField(max_length=100, blank=True)
+    payer_phone = models.CharField(max_length=20, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     note = models.TextField(blank=True)
 
@@ -81,6 +85,13 @@ class Payment(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     paid_at = models.DateTimeField(null=True, blank=True)
     period_end = models.DateTimeField(null=True, blank=True)
+
+    # Manual claims ("I've paid"): who confirmed / rejected it and when
+    reviewed_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='reviewed_payments',
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']

@@ -8,6 +8,8 @@ import HeroKpi from '../widgets/HeroKpi';
 import KpiRow from '../widgets/KpiRow';
 import DataTable from '../widgets/DataTable';
 import QuickActions from '../widgets/QuickActions';
+import PendingPaymentClaims from '@/components/PendingPaymentClaims';
+import RecentPayments from '@/components/RecentPayments';
 
 export default function SuperDashboard() {
   const [data, setData] = useState(null);
@@ -41,6 +43,9 @@ export default function SuperDashboard() {
         { href: '/settings', label: 'Platform Settings', variant: 'secondary' },
       ]}
     >
+      <PendingPaymentClaims />
+      <RecentPayments />
+
       <Section>
         <HeroKpi
           label="Total businesses"

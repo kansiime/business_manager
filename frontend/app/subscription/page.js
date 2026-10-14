@@ -1,6 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import MomoPayPanel from '@/components/MomoPayPanel';
+import ManualPaymentClaim from '@/components/ManualPaymentClaim';
+import { useTenantContext } from '@/lib/useTenantContext';
 import { billing } from '@/lib/api';
 import { formatMoney } from '@/lib/format';
 import { apiErrorMessage } from '@/lib/session';
@@ -10,8 +13,17 @@ const STATUS_BADGE = {
   successful: 'badge-green',
   pending: 'badge-amber',
   failed: 'badge-red',
+  rejected: 'badge-red',
   cancelled: 'badge-gray',
 };
+
+const PROVIDER_LABEL = { mtn_momo: 'MTN MoMo', flutterwave: 'Card / other', manual: 'Mobile Money (manual)' };
+
+function statusLabel(p) {
+  if (p.status === 'pending') return p.provider === 'manual' ? 'Awaiting confirmation' : 'Pending';
+  if (p.status === 'successful') return 'Paid';
+  return p.status.charAt(0).toUpperCase() + p.status.slice(1);
+}
 
 function fmtDate(iso) {
   return iso ? new Date(iso).toLocaleDateString() : '—';
@@ -19,18 +31,30 @@ function fmtDate(iso) {
 
 export default function SubscriptionPage() {
   const toast = useToast();
+  const { refresh: refreshContext } = useTenantContext();
   const [data, setData] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [showManual, setShowManual] = useState(false);
   const [cycle, setCycle] = useState('monthly');
   const [paying, setPaying] = useState(null);
   const [justExpired, setJustExpired] = useState(false);
 
   useEffect(() => {
     setJustExpired(new URLSearchParams(window.location.search).get('expired') === '1');
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const load = () =>
     billing.status()
       .then((r) => setData(r.data))
       .catch((e) => toast.error(apiErrorMessage(e, 'Could not load your subscription.')));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+
+  const onMomoPaid = () => {
+    toast.success('Payment received — thank you!');
+    load();
+    refreshContext();
+  };
 
   const pay = async (plan) => {
     setPaying(plan.code);
@@ -50,6 +74,17 @@ export default function SubscriptionPage() {
       </ProtectedRoute>
     );
   }
+
+  const hasMethod = (code) => data.payment_methods.some((m) => m.code === code);
+  const canMomo = data.can_pay && hasMethod('mtn_momo');
+  const canCard = data.can_pay && hasMethod('flutterwave');
+  const priceOf = (p) => (cycle === 'yearly' ? p.yearly_price : p.monthly_price);
+
+  const choose = (p) => {
+    setSelected(p);
+    // Let the payment section render, then bring it into view
+    setTimeout(() => document.getElementById('pay-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  };
 
   const planName = data.is_trial ? 'Free trial' : (data.plans.find((p) => p.code === data.plan)?.name || data.plan);
   const statusLine = data.is_expired
@@ -86,6 +121,13 @@ export default function SubscriptionPage() {
         <p className="text-xs text-slate-500 mt-1">Up to {data.max_users} users.</p>
       </div>
 
+      {data.payments.some((p) => p.provider === 'manual' && p.status === 'pending') && (
+        <div className="mb-6 p-4 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-900" role="status">
+          ⏳ We&apos;ve received your payment details and are confirming them. Your plan will be
+          activated as soon as we do — no need to pay again.
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
         <h2 className="font-semibold text-slate-900">
           {data.is_trial ? 'Choose a plan' : 'Renew or change plan'}
@@ -109,9 +151,16 @@ export default function SubscriptionPage() {
         {data.plans.map((p) => {
           const price = cycle === 'yearly' ? p.yearly_price : p.monthly_price;
           const current = !data.is_trial && p.code === data.plan;
+          const isSelected = selected?.code === p.code;
           return (
-            <div key={p.code} className={`card flex flex-col ${current ? 'ring-2 ring-blue-600' : ''}`}>
-              <p className="font-semibold text-slate-900">{p.name}</p>
+            <div
+              key={p.code}
+              className={`card flex flex-col ${isSelected ? 'ring-2 ring-blue-600' : current ? 'ring-1 ring-blue-300' : ''}`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-semibold text-slate-900">{p.name}</p>
+                {current && <span className="badge badge-green">Current</span>}
+              </div>
               <p className="text-2xl font-bold text-slate-900 mt-2">
                 {formatMoney(price, p.currency)}
                 <span className="text-sm font-normal text-slate-500"> / {cycle === 'yearly' ? 'year' : 'month'}</span>
@@ -121,13 +170,14 @@ export default function SubscriptionPage() {
                 <li>{p.max_branches} branch{p.max_branches === 1 ? '' : 'es'}</li>
                 <li>All features for your business type</li>
               </ul>
-              {data.can_pay && data.online_payments && (
+              {data.can_pay && (
                 <button
-                  className="btn btn-primary mt-4"
-                  disabled={paying !== null}
-                  onClick={() => pay(p)}
+                  type="button"
+                  className={`btn mt-4 ${isSelected ? 'btn-secondary' : 'btn-primary'}`}
+                  onClick={() => choose(p)}
+                  aria-pressed={isSelected}
                 >
-                  {paying === p.code ? 'Opening payment…' : current ? 'Renew' : `Pay with mobile money or card`}
+                  {isSelected ? 'Selected' : current ? `Renew ${p.name}` : `Choose ${p.name}`}
                 </button>
               )}
             </div>
@@ -141,16 +191,60 @@ export default function SubscriptionPage() {
         </div>
       )}
 
-      {data.can_pay && !data.online_payments && (
-        <div className="card mb-6">
-          <h3 className="font-semibold text-slate-900 mb-1">How to pay</h3>
-          <p className="text-sm text-slate-600">{data.manual_payment.instructions}</p>
-          <ul className="text-sm text-slate-700 mt-2 space-y-1">
-            {data.manual_payment.support_phone && <li>Phone / Mobile money: <strong>{data.manual_payment.support_phone}</strong></li>}
-            {data.manual_payment.support_email && <li>Email: <strong>{data.manual_payment.support_email}</strong></li>}
-            <li>Reference: <strong>{data.business.name}</strong></li>
-          </ul>
-        </div>
+      {data.can_pay && selected && (
+        <section id="pay-section" className="mb-6 scroll-mt-6">
+          <h2 className="font-semibold text-slate-900 mb-3">
+            Pay for {selected.name} — {formatMoney(priceOf(selected), selected.currency)} / {cycle === 'yearly' ? 'year' : 'month'}
+          </h2>
+
+          {canMomo && (
+            <MomoPayPanel
+              key={`${selected.code}-${cycle}`}
+              plan={selected}
+              cycle={cycle}
+              amount={priceOf(selected)}
+              currency={data.momo_sandbox ? 'EUR' : selected.currency}
+              defaultPhone={data.default_phone}
+              sandbox={data.momo_sandbox}
+              onPaid={onMomoPaid}
+              onCancel={() => setSelected(null)}
+            />
+          )}
+
+          {canCard && (
+            <div className="card mb-6 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-slate-600">
+                {canMomo ? 'Not on MTN? ' : ''}Pay by card, Airtel Money or bank.
+              </p>
+              <button
+                className={`btn ${canMomo ? 'btn-secondary' : 'btn-primary'}`}
+                disabled={paying !== null}
+                onClick={() => pay(selected)}
+              >
+                {paying === selected.code ? 'Opening payment…' : 'Pay by card / other'}
+              </button>
+            </div>
+          )}
+
+          {(canMomo || canCard) && !showManual && (
+            <button type="button" className="text-sm text-blue-600 hover:underline" onClick={() => setShowManual(true)}>
+              Already sent money to our Mobile Money number? Tell us here
+            </button>
+          )}
+
+          {(!(canMomo || canCard) || showManual) && (
+            <ManualPaymentClaim
+              key={`${selected.code}-${cycle}`}
+              plan={selected}
+              cycle={cycle}
+              amount={priceOf(selected)}
+              manual={data.manual_payment}
+              businessName={data.business.name}
+              defaultPhone={data.default_phone}
+              onSubmitted={load}
+            />
+          )}
+        </section>
       )}
 
       <h2 className="font-semibold text-slate-900 mb-3">Payment history</h2>
@@ -164,6 +258,8 @@ export default function SubscriptionPage() {
                 <th>Date</th>
                 <th>Plan</th>
                 <th className="text-right">Amount</th>
+                <th>Paid via</th>
+                <th>Transaction ID</th>
                 <th>Status</th>
                 <th>Covers until</th>
               </tr>
@@ -174,7 +270,14 @@ export default function SubscriptionPage() {
                   <td>{fmtDate(p.paid_at || p.created_at)}</td>
                   <td>{p.plan} <span className="text-slate-400 capitalize">({p.billing_cycle})</span></td>
                   <td className="text-right">{formatMoney(p.amount, p.currency)}</td>
-                  <td><span className={`badge ${STATUS_BADGE[p.status] || 'badge-gray'}`}>{p.status}</span></td>
+                  <td>{PROVIDER_LABEL[p.provider] || p.provider}</td>
+                  <td className="text-xs text-slate-600">{p.reference || '—'}</td>
+                  <td>
+                    <span className={`badge ${STATUS_BADGE[p.status] || 'badge-gray'}`}>{statusLabel(p)}</span>
+                    {['rejected', 'failed'].includes(p.status) && p.note && (
+                      <p className="text-xs text-red-600 mt-1">{p.note}</p>
+                    )}
+                  </td>
                   <td>{fmtDate(p.period_end)}</td>
                 </tr>
               ))}

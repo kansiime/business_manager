@@ -7,10 +7,16 @@ mobile money, card, or bank, so we never handle card or wallet details.
 Docs: https://developer.flutterwave.com/docs/collecting-payments/standard
 """
 import json
+import ssl
 import urllib.error
 import urllib.request
 
+import certifi
 from django.conf import settings
+
+# Use certifi's CA bundle: python.org builds on macOS don't trust the system
+# certificates, which breaks HTTPS to the provider ("CERTIFICATE_VERIFY_FAILED").
+SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
 API_BASE = 'https://api.flutterwave.com/v3'
 
@@ -35,7 +41,7 @@ def _request(method, path, payload=None):
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30, context=SSL_CONTEXT) as resp:
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
         try:

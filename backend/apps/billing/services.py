@@ -89,3 +89,44 @@ def mark_payment_successful(payment_id, *, provider_tx_id='', paid_amount=None, 
             payment.provider_tx_id = str(provider_tx_id)
         payment.save(update_fields=['status', 'paid_at', 'period_end', 'provider_tx_id'])
         return payment, None
+
+
+def mark_payment_failed(payment_id, reason=''):
+    """Mark a still-pending payment failed. Never touches a paid one."""
+    with transaction.atomic():
+        payment = Payment.objects.select_for_update().get(pk=payment_id)
+        if payment.status == 'pending':
+            payment.status = 'failed'
+            payment.note = reason
+            payment.save(update_fields=['status', 'note'])
+        return payment
+
+
+def sync_payment(payment):
+    """
+    Ask the payment's provider what happened and apply it. This is the only
+    path that marks a provider payment paid; callbacks and webhooks just
+    trigger it.
+
+    Returns (payment, error). Raises gateways.GatewayError if the provider
+    can't be reached (the payment stays pending and can be re-checked).
+    """
+    from .gateways import get_gateway
+
+    if payment.status != 'pending':
+        return payment, None
+    gateway = get_gateway(payment.provider)
+    if gateway is None:
+        return payment, None
+
+    result = gateway.check_status(payment)
+    if result.status == 'successful':
+        return mark_payment_successful(
+            payment.id,
+            provider_tx_id=result.provider_tx_id,
+            paid_amount=result.amount,
+            paid_currency=result.currency,
+        )
+    if result.status == 'failed':
+        return mark_payment_failed(payment.id, result.reason), result.reason
+    return payment, None

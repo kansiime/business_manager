@@ -32,6 +32,21 @@ services:
         sync: false            # Flutterwave dashboard → Settings → API keys
       - key: FLUTTERWAVE_WEBHOOK_HASH
         sync: false            # Flutterwave dashboard → Settings → Webhooks (secret hash)
+      # MTN Mobile Money Collections (Request to Pay)
+      - key: MTN_MOMO_SUBSCRIPTION_KEY
+        sync: false            # momodeveloper.mtn.com → Collections → Primary key
+      - key: MTN_MOMO_API_USER
+        sync: false
+      - key: MTN_MOMO_API_KEY
+        sync: false
+      - key: MTN_MOMO_ENVIRONMENT
+        value: "sandbox"       # "mtnuganda" once MTN issues production credentials
+      - key: MTN_MOMO_BASE_URL
+        value: "https://sandbox.momodeveloper.mtn.com"   # production: https://proxy.momoapi.mtn.com
+      - key: MTN_MOMO_CURRENCY
+        value: "EUR"           # sandbox only accepts EUR; empty in production (UGX)
+      - key: MTN_MOMO_CALLBACK_URL
+        value: "https://garage-backend.onrender.com/api/billing/momo/callback"
 
   # ---------------------------------------------------------------------------
   # Next.js Frontend
@@ -57,7 +72,7 @@ services:
     runtime: python
     schedule: "0 6 * * *"    # 6 AM UTC = 9 AM EAT
     buildCommand: pip install -r requirements.txt
-    startCommand: "python manage.py send_daily_digest; python manage.py send_billing_reminders"
+    startCommand: "python manage.py send_daily_digest; python manage.py send_billing_reminders; python manage.py sync_pending_payments"
     rootDir: backend
     envVars:
       - fromGroup: garage-backend-env

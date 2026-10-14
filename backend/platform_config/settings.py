@@ -212,6 +212,26 @@ FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
 FLUTTERWAVE_SECRET_KEY = os.environ.get('FLUTTERWAVE_SECRET_KEY', '')
 # Secret hash set in Flutterwave dashboard → Settings → Webhooks
 FLUTTERWAVE_WEBHOOK_HASH = os.environ.get('FLUTTERWAVE_WEBHOOK_HASH', '')
+
+# MTN Mobile Money Collections (Request to Pay). Leave the keys empty to hide it.
+#   Sandbox:    MTN_MOMO_ENVIRONMENT=sandbox, MTN_MOMO_CURRENCY=EUR,
+#               base https://sandbox.momodeveloper.mtn.com
+#   Production: MTN_MOMO_ENVIRONMENT=mtnuganda, MTN_MOMO_CURRENCY=UGX (or empty),
+#               base https://proxy.momoapi.mtn.com
+MTN_MOMO_SUBSCRIPTION_KEY = os.environ.get('MTN_MOMO_SUBSCRIPTION_KEY', '')  # Collections primary key
+MTN_MOMO_API_USER = os.environ.get('MTN_MOMO_API_USER', '')
+MTN_MOMO_API_KEY = os.environ.get('MTN_MOMO_API_KEY', '')
+MTN_MOMO_ENVIRONMENT = os.environ.get('MTN_MOMO_ENVIRONMENT', 'sandbox')
+MTN_MOMO_BASE_URL = os.environ.get('MTN_MOMO_BASE_URL', 'https://sandbox.momodeveloper.mtn.com')
+# Empty = charge in the plan's currency
+MTN_MOMO_CURRENCY = os.environ.get('MTN_MOMO_CURRENCY', '')
+# Public URL MTN calls when a payment finishes, e.g.
+# https://garage-backend.onrender.com/api/billing/momo/callback  (host must
+# match the API user's callback host). Empty = rely on status polling.
+MTN_MOMO_CALLBACK_URL = os.environ.get('MTN_MOMO_CALLBACK_URL', '')
+# MTN Uganda mobile prefixes (international format)
+MTN_MOMO_MSISDN_PREFIXES = os.environ.get('MTN_MOMO_MSISDN_PREFIXES', '25676,25677,25678,25639')
+
 # Shown to owners when online payment isn't configured
 MANUAL_PAYMENT_INSTRUCTIONS = os.environ.get(
     'MANUAL_PAYMENT_INSTRUCTIONS',

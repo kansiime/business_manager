@@ -223,7 +223,7 @@ class ExpiryAndPaymentTests(TestCase):
             'id': 999, 'tx_ref': tx_ref, 'status': 'successful',
             'amount': float(payment.amount), 'currency': 'UGX',
         }
-        with mock.patch('apps.billing.flutterwave.verify_transaction', return_value=verified):
+        with mock.patch('apps.billing.flutterwave.verify_by_reference', return_value=verified):
             res = client.post('/api/billing/verify/', {'tx_ref': tx_ref, 'transaction_id': 999}, format='json')
         self.assertEqual(res.status_code, 200, res.data)
 
@@ -240,7 +240,7 @@ class ExpiryAndPaymentTests(TestCase):
         self.assertEqual(res.status_code, 201)
 
         # Verifying twice doesn't extend twice
-        with mock.patch('apps.billing.flutterwave.verify_transaction', return_value=verified):
+        with mock.patch('apps.billing.flutterwave.verify_by_reference', return_value=verified):
             client.post('/api/billing/verify/', {'tx_ref': tx_ref, 'transaction_id': 999}, format='json')
         self.tenant.refresh_from_db()
         days = (self.tenant.subscription_ends_at - timezone.now()).total_seconds() / 86400
@@ -252,7 +252,7 @@ class ExpiryAndPaymentTests(TestCase):
         with mock.patch('apps.billing.flutterwave.create_checkout', return_value='https://pay.example/x'):
             tx_ref = client.post('/api/billing/checkout/', {'plan': 'starter', 'billing_cycle': 'yearly'}, format='json').data['tx_ref']
         verified = {'id': 1, 'tx_ref': tx_ref, 'status': 'successful', 'amount': 500000, 'currency': 'UGX'}
-        with mock.patch('apps.billing.flutterwave.verify_transaction', return_value=verified):
+        with mock.patch('apps.billing.flutterwave.verify_by_reference', return_value=verified):
             client.post('/api/billing/verify/', {'tx_ref': tx_ref, 'transaction_id': 1}, format='json')
         self.tenant.refresh_from_db()
         days = (self.tenant.subscription_ends_at - timezone.now()).total_seconds() / 86400
@@ -264,7 +264,7 @@ class ExpiryAndPaymentTests(TestCase):
         with mock.patch('apps.billing.flutterwave.create_checkout', return_value='https://pay.example/x'):
             tx_ref = client.post('/api/billing/checkout/', {'plan': 'starter'}, format='json').data['tx_ref']
         verified = {'id': 1, 'tx_ref': tx_ref, 'status': 'successful', 'amount': 100, 'currency': 'UGX'}
-        with mock.patch('apps.billing.flutterwave.verify_transaction', return_value=verified):
+        with mock.patch('apps.billing.flutterwave.verify_by_reference', return_value=verified):
             res = client.post('/api/billing/verify/', {'tx_ref': tx_ref, 'transaction_id': 1}, format='json')
         self.assertEqual(res.status_code, 400)
         self.tenant.refresh_from_db()
@@ -400,3 +400,299 @@ class SessionContextAndAuthTests(TestCase):
         self.assertEqual(res.data['receivables'], 300.0)
         self.assertEqual(res.data['stock_value'], 300.0)
         self.assertEqual(res.data['low_stock'], 1)
+
+
+MOMO_SETTINGS = dict(
+    MTN_MOMO_SUBSCRIPTION_KEY='sub-key',
+    MTN_MOMO_API_USER='6f1c3c8e-2b7a-4d7e-9a51-3c2f9b1d0e44',
+    MTN_MOMO_API_KEY='api-key',
+    MTN_MOMO_ENVIRONMENT='mtnuganda',
+    MTN_MOMO_CURRENCY='',
+    MTN_MOMO_CALLBACK_URL='https://api.example.com/api/billing/momo/callback',
+)
+
+
+@override_settings(**MOMO_SETTINGS)
+class MtnMomoTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.session = signup(APIClient()).data
+        self.client = authed(self.session['access'])
+        self.tenant = Tenant.objects.get(name='Mukasa Agro')
+        self.starter = Plan.objects.get(code='starter')
+
+    def pay(self, phone='0772 123 456', plan='starter', cycle='monthly'):
+        with mock.patch('apps.billing.mtn_momo.request_to_pay') as rtp:
+            res = self.client.post(
+                '/api/billing/momo/pay/',
+                {'plan': plan, 'billing_cycle': cycle, 'phone': phone}, format='json',
+            )
+        return res, rtp
+
+    def mtn_says(self, **status):
+        return mock.patch('apps.billing.mtn_momo.get_status', return_value=status)
+
+    def test_subscription_lists_momo(self):
+        res = self.client.get('/api/billing/subscription/')
+        self.assertIn('mtn_momo', [m['code'] for m in res.data['payment_methods']])
+
+    def test_request_to_pay_sent_with_normalized_number(self):
+        res, rtp = self.pay()
+        self.assertEqual(res.status_code, 201, res.data)
+        kwargs = rtp.call_args.kwargs
+        self.assertEqual(kwargs['msisdn'], '256772123456')
+        self.assertEqual(kwargs['currency'], 'UGX')
+        self.assertEqual(kwargs['amount'], self.starter.monthly_price)
+        ref = res.data['payment']['tx_ref']
+        self.assertEqual(kwargs['reference_id'], ref)
+        self.assertEqual(kwargs['callback_url'], f'https://api.example.com/api/billing/momo/callback/{ref}/')
+        payment = Payment.objects.get(tx_ref=ref)
+        self.assertEqual((payment.provider, payment.status, payment.payer_phone),
+                         ('mtn_momo', 'pending', '256772123456'))
+
+    def test_rejects_non_mtn_number(self):
+        res, rtp = self.pay(phone='0752 123 456')   # Airtel
+        self.assertEqual(res.status_code, 400)
+        rtp.assert_not_called()
+
+    def test_only_one_waiting_request_at_a_time(self):
+        self.pay()
+        res, rtp = self.pay()
+        self.assertEqual(res.status_code, 409)
+        rtp.assert_not_called()
+
+    def test_pending_then_successful_activates_plan(self):
+        ref = self.pay()[0].data['payment']['tx_ref']
+
+        with self.mtn_says(status='PENDING'):
+            res = self.client.get(f'/api/billing/momo/status/{ref}/')
+        self.assertEqual(res.data['payment']['status'], 'pending')
+
+        with self.mtn_says(status='SUCCESSFUL', amount='50000', currency='UGX',
+                           financialTransactionId='987', externalId=ref):
+            res = self.client.get(f'/api/billing/momo/status/{ref}/')
+        self.assertTrue(res.data['ok'])
+        self.tenant.refresh_from_db()
+        self.assertEqual((self.tenant.plan, self.tenant.status), ('starter', 'active'))
+        self.assertEqual(Payment.objects.get(tx_ref=ref).provider_tx_id, '987')
+
+    def test_declined_payment_shows_reason(self):
+        ref = self.pay()[0].data['payment']['tx_ref']
+        with self.mtn_says(status='FAILED', reason='APPROVAL_REJECTED'):
+            res = self.client.get(f'/api/billing/momo/status/{ref}/')
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('declined', res.data['detail'])
+        self.tenant.refresh_from_db()
+        self.assertEqual(self.tenant.plan, 'trial')
+
+    def test_wrong_amount_is_not_accepted(self):
+        ref = self.pay()[0].data['payment']['tx_ref']
+        with self.mtn_says(status='SUCCESSFUL', amount='500', currency='UGX'):
+            self.client.get(f'/api/billing/momo/status/{ref}/')
+        self.tenant.refresh_from_db()
+        self.assertEqual(self.tenant.plan, 'trial')
+
+    def test_callback_only_trusts_mtn_status(self):
+        ref = self.pay()[0].data['payment']['tx_ref']
+        anon = APIClient()
+
+        # A forged "successful" callback does nothing while MTN says pending
+        with self.mtn_says(status='PENDING'):
+            anon.put(f'/api/billing/momo/callback/{ref}/', {'status': 'SUCCESSFUL'}, format='json')
+        self.assertEqual(Payment.objects.get(tx_ref=ref).status, 'pending')
+
+        with self.mtn_says(status='SUCCESSFUL', amount='50000', currency='UGX', financialTransactionId='1'):
+            res = anon.put(f'/api/billing/momo/callback/{ref}/', {'status': 'SUCCESSFUL'}, format='json')
+        self.assertEqual(res.status_code, 200)
+        self.tenant.refresh_from_db()
+        self.assertEqual(self.tenant.plan, 'starter')
+
+    def test_cannot_check_another_business_payment(self):
+        ref = self.pay()[0].data['payment']['tx_ref']
+        other = signup(APIClient(), username='bob', email='bob@example.com', business_name='Bob Shop').data
+        res = authed(other['access']).get(f'/api/billing/momo/status/{ref}/')
+        self.assertEqual(res.status_code, 404)
+
+    def test_expired_trial_can_still_pay_with_momo(self):
+        self.tenant.trial_ends_at = timezone.now() - timedelta(days=1)
+        self.tenant.save()
+        res, _ = self.pay()
+        self.assertEqual(res.status_code, 201)
+
+    def test_sync_command_completes_and_expires(self):
+        from django.core.management import call_command
+
+        paid_ref = self.pay()[0].data['payment']['tx_ref']
+        Payment.objects.filter(tx_ref=paid_ref).update(created_at=timezone.now() - timedelta(minutes=5))
+        with self.mtn_says(status='SUCCESSFUL', amount='50000', currency='UGX'):
+            call_command('sync_pending_payments', stdout=mock.MagicMock())
+        self.assertEqual(Payment.objects.get(tx_ref=paid_ref).status, 'successful')
+
+        stale_ref = self.pay()[0].data['payment']['tx_ref']
+        Payment.objects.filter(tx_ref=stale_ref).update(created_at=timezone.now() - timedelta(hours=1))
+        with self.mtn_says(status='PENDING'):
+            call_command('sync_pending_payments', stdout=mock.MagicMock())
+        self.assertEqual(Payment.objects.get(tx_ref=stale_ref).status, 'failed')
+
+
+class MtnMomoClientTests(TestCase):
+    """The HTTP client itself, with MTN's responses faked."""
+
+    @override_settings(**MOMO_SETTINGS)
+    def test_token_cached_and_request_headers(self):
+        from apps.billing import mtn_momo
+
+        cache.clear()
+        calls = []
+
+        def fake_call(method, path, *, headers, payload=None):
+            calls.append((method, path, headers, payload))
+            if path == '/collection/token/':
+                return 200, {'access_token': 'tok', 'expires_in': 3600}
+            if path == '/collection/v1_0/requesttopay':
+                return 202, None
+            return 200, {'status': 'FAILED', 'reason': {'code': 'NOT_ENOUGH_FUNDS'}}
+
+        with mock.patch.object(mtn_momo, '_call', side_effect=fake_call):
+            mtn_momo.request_to_pay(
+                reference_id='ref-1', amount=Decimal('50000.00'), currency='UGX',
+                msisdn='256772123456', external_id='ref-1',
+                payer_message='Starter', payee_note='Starter', callback_url=None,
+            )
+            status = mtn_momo.get_status('ref-1')
+
+        token_calls = [c for c in calls if c[1] == '/collection/token/']
+        self.assertEqual(len(token_calls), 1)          # cached for the 2nd call
+        rtp = [c for c in calls if c[1] == '/collection/v1_0/requesttopay'][0]
+        self.assertEqual(rtp[2]['X-Reference-Id'], 'ref-1')
+        self.assertEqual(rtp[2]['X-Target-Environment'], 'mtnuganda')
+        self.assertEqual(rtp[3]['amount'], '50000')
+        self.assertEqual(rtp[3]['payer'], {'partyIdType': 'MSISDN', 'partyId': '256772123456'})
+        self.assertEqual(status['reason'], 'NOT_ENOUGH_FUNDS')
+
+
+class MtnMomoConfigTests(TestCase):
+    def test_half_finished_setup_is_not_offered(self):
+        from apps.billing import mtn_momo
+
+        with override_settings(**{**MOMO_SETTINGS, 'MTN_MOMO_API_USER': '<printed>'}):
+            self.assertFalse(mtn_momo.is_configured())
+        with override_settings(**{**MOMO_SETTINGS, 'MTN_MOMO_API_KEY': ''}):
+            self.assertFalse(mtn_momo.is_configured())
+        with override_settings(**MOMO_SETTINGS):
+            self.assertTrue(mtn_momo.is_configured())
+
+    @override_settings(**MOMO_SETTINGS)
+    def test_refused_credentials_show_setup_message_not_number_error(self):
+        from apps.billing import mtn_momo
+
+        cache.clear()
+        session = signup(APIClient()).data
+        with mock.patch.object(mtn_momo, '_call', return_value=(401, {'error': 'login_failed'})):
+            res = authed(session['access']).post(
+                '/api/billing/momo/pay/', {'plan': 'starter', 'phone': '0772123456'}, format='json',
+            )
+        self.assertEqual(res.status_code, 502)
+        self.assertIn('temporarily unavailable', res.data['detail'])
+
+
+class ManualClaimTests(TestCase):
+    """Owner reports a Mobile Money payment; platform admin confirms or rejects it."""
+
+    def setUp(self):
+        from apps.tenants.models import PlatformSetting
+
+        cache.clear()
+        platform = PlatformSetting.load()
+        platform.support_email = 'billing@platform.example'
+        platform.save()
+
+        self.owner = authed(signup(APIClient()).data['access'])
+        self.tenant = Tenant.objects.get(name='Mukasa Agro')
+        User.objects.create_user(username='root', password='rootpass1', role='super')
+        token = APIClient().post(
+            '/api/auth/login/', {'username': 'root', 'password': 'rootpass1'}, format='json',
+        ).data['access']
+        self.admin = authed(token)
+
+    def claim(self, reference='MP2410141234', **extra):
+        return self.owner.post('/api/billing/manual/claim/', {
+            'plan': 'starter', 'billing_cycle': 'monthly',
+            'phone': '0772 123 456', 'reference': reference, **extra,
+        }, format='json')
+
+    def test_claim_confirm_shows_in_owner_account(self):
+        from django.core import mail
+
+        self.tenant.trial_ends_at = timezone.now() - timedelta(days=1)   # expired → read-only
+        self.tenant.save()
+
+        res = self.claim()
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['payment']['status'], 'pending')
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('billing@platform.example', mail.outbox[0].to)
+
+        pending = self.admin.get('/api/billing/manual/pending/').data
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]['tenant_name'], 'Mukasa Agro')
+        self.assertEqual(pending[0]['reference'], 'MP2410141234')
+
+        res = self.admin.post(f"/api/billing/manual/{pending[0]['id']}/confirm/", format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data['status'], 'successful')
+
+        # Owner's account reflects it
+        status = self.owner.get('/api/billing/subscription/').data
+        self.assertEqual(status['plan'], 'starter')
+        self.assertFalse(status['is_expired'])
+        row = status['payments'][0]
+        self.assertEqual((row['status'], row['reference']), ('successful', 'MP2410141234'))
+        self.assertIsNotNone(row['period_end'])
+        self.assertEqual(
+            self.owner.post('/api/expenses/categories/', {'name': 'Rent'}, format='json').status_code, 201,
+        )
+        self.assertEqual(len(mail.outbox), 2)          # owner told it's confirmed
+        self.assertEqual(self.admin.get('/api/billing/manual/pending/').data, [])
+
+    def test_reject_needs_reason_and_owner_sees_it(self):
+        payment_id = self.claim().data['payment']['id']
+        self.assertEqual(
+            self.admin.post(f'/api/billing/manual/{payment_id}/reject/', {}, format='json').status_code, 400,
+        )
+        res = self.admin.post(
+            f'/api/billing/manual/{payment_id}/reject/', {'reason': 'No such transaction'}, format='json',
+        )
+        self.assertEqual(res.data['status'], 'rejected')
+        row = self.owner.get('/api/billing/subscription/').data['payments'][0]
+        self.assertEqual((row['status'], row['note']), ('rejected', 'No such transaction'))
+        self.tenant.refresh_from_db()
+        self.assertEqual(self.tenant.plan, 'trial')
+        # Can't confirm it afterwards
+        self.assertEqual(
+            self.admin.post(f'/api/billing/manual/{payment_id}/confirm/').status_code, 400,
+        )
+
+    def test_same_transaction_id_cannot_be_reused(self):
+        self.claim()
+        other = authed(signup(APIClient(), username='bob', email='bob@example.com',
+                              business_name='Bob Shop').data['access'])
+        res = other.post('/api/billing/manual/claim/', {
+            'plan': 'starter', 'phone': '0772000000', 'reference': 'mp2410141234',
+        }, format='json')
+        self.assertEqual(res.status_code, 400)
+
+    def test_requires_reference_and_admin_role(self):
+        self.assertEqual(self.claim(reference='').status_code, 400)
+        cashier = User.objects.create_user(username='c9', password='whatever1', role='cashier', tenant=self.tenant)
+        Membership.objects.create(user=cashier, tenant=self.tenant, role='cashier')
+        token = APIClient().post('/api/auth/login/', {'username': 'c9', 'password': 'whatever1'}, format='json').data['access']
+        res = authed(token).post('/api/billing/manual/claim/', {
+            'plan': 'starter', 'phone': '0772000000', 'reference': 'ABC12345',
+        }, format='json')
+        self.assertEqual(res.status_code, 403)
+
+    def test_only_platform_admin_can_review(self):
+        payment_id = self.claim().data['payment']['id']
+        self.assertEqual(self.owner.get('/api/billing/manual/pending/').status_code, 403)
+        self.assertEqual(self.owner.post(f'/api/billing/manual/{payment_id}/confirm/').status_code, 403)

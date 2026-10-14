@@ -90,17 +90,50 @@ change returns `403 {code: "subscription_expired"}` and the app sends them to
 `/subscription`. Nothing is deleted.
 
 **Paying.** On `/subscription` the business admin picks Starter / Growth /
-Power, monthly or yearly, and pays through Flutterwave's hosted checkout
-(MTN / Airtel mobile money, card, or bank). Payment is confirmed server-side
-(redirect verification and webhook, both re-checked with Flutterwave's API),
-then the plan is extended by 30 or 365 days on top of any time still left.
-Without Flutterwave keys, owners see manual payment instructions and the
-platform admin records the payment on the business's page, which activates the
-plan the same way.
+Power, monthly or yearly, and pays per renewal with:
+
+- **MTN Mobile Money** (direct, MTN Open API *Request to Pay*): they enter
+  their MTN number, approve the PIN prompt on their phone, and the page waits
+  for the result. MTN's callback, the page's polling and the
+  `sync_pending_payments` job all just ask MTN for the request's status — only
+  MTN's answer (with the right amount and currency) activates the plan.
+  Unapproved requests expire after 30 minutes.
+- **Flutterwave** hosted checkout (card, Airtel / other mobile money, bank),
+  confirmed the same way via redirect verification and webhook.
+
+- **Manual Mobile Money**: the owner sends the amount to the platform's
+  number (Platform Settings → support phone), then reports it under
+  *"I've paid"* with the number they paid from and the transaction ID from the
+  SMS. It shows as *Awaiting confirmation* in their payment history, and the
+  platform admin gets an email plus a **Payments to confirm** list on the
+  platform dashboard. **Confirm** activates the plan; **Reject** needs a reason,
+  which the owner sees. Either way the owner is emailed. A transaction ID can
+  only be used once. The admin can also record a payment directly on the
+  business's page.
+
+A confirmed payment extends the plan by 30 or 365 days on top of any time
+still left. Every provider sits behind one interface (`apps/billing/gateways.py`),
+which is where pre-authorised recurring debits will plug in later.
+
+**MTN MoMo setup**
+
+1. Sandbox: sign up at <https://momodeveloper.mtn.com>, subscribe to
+   **Collections**, then run
+   `MTN_MOMO_SUBSCRIPTION_KEY=<primary key> python manage.py momo_sandbox_setup --callback-host <backend host>`
+   and copy the printed values into `.env`. The sandbox only accepts EUR and
+   test numbers (`46733123450` fails, `…451` rejected, `…452` expires,
+   `…453` stays pending, anything else succeeds).
+2. Production: after MTN Uganda merchant onboarding you get production
+   credentials; set `MTN_MOMO_ENVIRONMENT=mtnuganda`,
+   `MTN_MOMO_BASE_URL=https://proxy.momoapi.mtn.com` and leave
+   `MTN_MOMO_CURRENCY` empty (plans are in UGX).
 
 | Env var | Purpose |
 |---|---|
-| `FLUTTERWAVE_SECRET_KEY` | Enables online payment. Leave empty for manual payments only. |
+| `MTN_MOMO_SUBSCRIPTION_KEY`, `MTN_MOMO_API_USER`, `MTN_MOMO_API_KEY` | Enable MTN Mobile Money. |
+| `MTN_MOMO_ENVIRONMENT`, `MTN_MOMO_BASE_URL`, `MTN_MOMO_CURRENCY` | Sandbox vs production (see above). |
+| `MTN_MOMO_CALLBACK_URL` | `<backend>/api/billing/momo/callback` — optional; polling works without it. |
+| `FLUTTERWAVE_SECRET_KEY` | Enables card / other mobile money checkout. |
 | `FLUTTERWAVE_WEBHOOK_HASH` | Secret hash set in Flutterwave → Webhooks. Webhook URL: `<backend>/api/billing/webhook/` |
 | `FRONTEND_URL` | Where Flutterwave redirects after checkout (`/subscription/callback`). |
 | `MANUAL_PAYMENT_INSTRUCTIONS` | Text shown when online payment is off. |

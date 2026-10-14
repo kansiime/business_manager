@@ -52,6 +52,13 @@ export const billing = {
   checkout: (plan, billingCycle) =>
     api.post('/billing/checkout/', { plan, billing_cycle: billingCycle }),
   verify: (params) => api.post('/billing/verify/', params),
+  momoPay: (plan, billingCycle, phone) =>
+    api.post('/billing/momo/pay/', { plan, billing_cycle: billingCycle, phone }),
+  momoStatus: (txRef) => api.get(`/billing/momo/status/${txRef}/`),
+  manualClaim: (data) => api.post('/billing/manual/claim/', data),
+  pendingClaims: () => api.get('/billing/manual/pending/'),
+  reviewClaim: (id, decision, reason) =>
+    api.post(`/billing/manual/${id}/${decision}/`, reason ? { reason } : {}),
 };
 
 export const downloadFile = async (url, filename) => {
