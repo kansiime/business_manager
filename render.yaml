@@ -25,6 +25,13 @@ services:
         value: ".onrender.com"
       - key: CORS_ALLOWED_ORIGINS
         value: "https://garage-frontend.onrender.com"
+      # Subscription billing — Flutterwave redirects back here after payment
+      - key: FRONTEND_URL
+        value: "https://garage-frontend.onrender.com"
+      - key: FLUTTERWAVE_SECRET_KEY
+        sync: false            # Flutterwave dashboard → Settings → API keys
+      - key: FLUTTERWAVE_WEBHOOK_HASH
+        sync: false            # Flutterwave dashboard → Settings → Webhooks (secret hash)
 
   # ---------------------------------------------------------------------------
   # Next.js Frontend
@@ -50,7 +57,7 @@ services:
     runtime: python
     schedule: "0 6 * * *"    # 6 AM UTC = 9 AM EAT
     buildCommand: pip install -r requirements.txt
-    startCommand: python manage.py send_daily_digest
+    startCommand: "python manage.py send_daily_digest; python manage.py send_billing_reminders"
     rootDir: backend
     envVars:
       - fromGroup: garage-backend-env

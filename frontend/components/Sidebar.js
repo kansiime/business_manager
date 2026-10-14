@@ -2,7 +2,8 @@
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import api from '@/lib/api';
+import api, { auth } from '@/lib/api';
+import { saveSession, clearSession, storedBusinesses, apiErrorMessage } from '@/lib/session';
 import { useUser } from '@/lib/useUser';
 import { useTenantContext } from '@/lib/useTenantContext';
 
@@ -14,13 +15,41 @@ export default function Sidebar() {
 
   const [open, setOpen] = useState(false);
   const [dueCount, setDueCount] = useState(0);
+  const [bizOpen, setBizOpen] = useState(false);
+  const [businesses, setBusinesses] = useState([]);
+  const [switchError, setSwitchError] = useState('');
 
   const isSuper = user?.role === 'super';
   const features = enabled_features || [];
   const myPages = pages || [];
 
   const brand = isSuper ? 'Business Manager' : (tenant?.name || 'Business Manager');
-  const brandIcon = isSuper ? '⚡' : '🏪';
+  const current = businesses.find((b) => b.is_current);
+  const brandIcon = isSuper ? '⚡' : (current?.business_type_icon || '🏪');
+
+  useEffect(() => { setBusinesses(storedBusinesses()); }, []);
+
+  const toggleSwitcher = () => {
+    setBizOpen((o) => !o);
+    setSwitchError('');
+    auth.businesses()
+      .then((r) => {
+        setBusinesses(r.data);
+        localStorage.setItem('businesses', JSON.stringify(r.data));
+      })
+      .catch(() => {});
+  };
+
+  const switchTo = async (b) => {
+    if (b.is_current) return setBizOpen(false);
+    try {
+      const res = await auth.switchBusiness(b.id);
+      saveSession(res.data);
+      window.location.href = '/dashboard';
+    } catch (e) {
+      setSwitchError(apiErrorMessage(e, 'Could not switch business.'));
+    }
+  };
 
   // Debt promise badge
   useEffect(() => {
@@ -39,7 +68,7 @@ export default function Sidebar() {
   }, [pathname, features, myPages, isSuper]);
 
   // Close mobile drawer on route change
-  useEffect(() => { setOpen(false); }, [pathname]);
+  useEffect(() => { setOpen(false); setBizOpen(false); }, [pathname]);
 
   const superLinks = [
     {
@@ -108,13 +137,19 @@ export default function Sidebar() {
     {
       section: 'Admin',
       links: [
-        { href: '/users',    key: 'users',    label: 'Users',    icon: '🔐' },
-        { href: '/settings', key: 'settings', label: 'Settings', icon: '⚙️' },
+        { href: '/users',        key: 'users',        label: 'Users',         icon: '🔐' },
+        { href: '/subscription', key: 'subscription', label: 'Subscription',  icon: '💳' },
+        { href: '/businesses',   key: 'businesses',   label: 'My businesses', icon: '🏢' },
+        { href: '/settings',     key: 'settings',     label: 'Settings',      icon: '⚙️' },
       ],
     },
   ];
 
-  const canPage = (key) => myPages.includes(key) || key === 'settings';
+  const canPage = (key) =>
+    myPages.includes(key) ||
+    key === 'settings' ||
+    key === 'businesses' ||
+    (key === 'subscription' && user?.role === 'admin');
   const canFeature = (feature) => !feature || features.includes(feature);
 
   const sections = isSuper
@@ -129,9 +164,7 @@ export default function Sidebar() {
         .filter((s) => s.links.length > 0);
 
   const logout = () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('user');
+    clearSession();
     router.push('/login');
   };
 
@@ -171,14 +204,59 @@ export default function Sidebar() {
           open ? 'translate-x-0' : '-translate-x-full'
         } lg:translate-x-0`}
       >
-        {/* Brand header */}
-        <div className="px-4 h-16 flex items-center justify-between border-b border-slate-200 flex-shrink-0">
-          <Link href="/dashboard" className="flex items-center gap-2 min-w-0">
-            <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center text-white text-lg flex-shrink-0">
-              {brandIcon}
+        {/* Brand header — doubles as the business switcher */}
+        <div className="relative px-4 h-16 flex items-center justify-between border-b border-slate-200 flex-shrink-0">
+          {isSuper ? (
+            <Link href="/dashboard" className="flex items-center gap-2 min-w-0">
+              <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center text-white text-lg flex-shrink-0">
+                {brandIcon}
+              </div>
+              <span className="font-bold text-slate-900 truncate text-sm">{brand}</span>
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={toggleSwitcher}
+              aria-expanded={bizOpen}
+              aria-haspopup="listbox"
+              className="flex items-center gap-2 min-w-0 flex-1 text-left rounded-lg hover:bg-slate-50 -mx-1 px-1 py-1"
+            >
+              <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center text-white text-lg flex-shrink-0">
+                {brandIcon}
+              </div>
+              <span className="min-w-0 flex-1">
+                <span className="block font-bold text-slate-900 truncate text-sm">{brand}</span>
+                <span className="block text-[10px] text-slate-500">Switch business ▾</span>
+              </span>
+            </button>
+          )}
+          {bizOpen && !isSuper && (
+            <div className="absolute left-2 right-2 top-full mt-1 z-50 bg-white border border-slate-200 rounded-lg shadow-lg py-1" role="listbox">
+              {businesses.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  role="option"
+                  aria-selected={b.is_current}
+                  disabled={b.is_locked}
+                  onClick={() => switchTo(b)}
+                  className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-slate-50 disabled:opacity-50 ${b.is_current ? 'font-semibold text-blue-700' : 'text-slate-700'}`}
+                >
+                  <span>{b.business_type_icon}</span>
+                  <span className="truncate flex-1">{b.name}</span>
+                  {b.is_expired && <span className="text-[10px] text-red-600">expired</span>}
+                  {b.is_current && <span aria-hidden>✓</span>}
+                </button>
+              ))}
+              {switchError && <p className="px-3 py-1 text-xs text-red-600">{switchError}</p>}
+              <Link
+                href="/businesses"
+                className="block border-t border-slate-100 mt-1 px-3 py-2 text-sm text-blue-600 hover:bg-slate-50"
+              >
+                + New business / manage
+              </Link>
             </div>
-            <span className="font-bold text-slate-900 truncate text-sm">{brand}</span>
-          </Link>
+          )}
           <button
             onClick={() => setOpen(false)}
             className="lg:hidden text-slate-400 hover:text-slate-700 text-2xl leading-none"

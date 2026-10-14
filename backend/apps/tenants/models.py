@@ -174,6 +174,28 @@ class Tenant(models.Model):
     def is_trial(self):
         return self.status == 'trial'
 
+    # ------------------------------------------------------------------
+    # Access / subscription state
+    # ------------------------------------------------------------------
+    @property
+    def access_ends_at(self):
+        """When the current trial or paid period runs out (None = no limit)."""
+        if self.plan == 'trial':
+            return self.trial_ends_at
+        return self.subscription_ends_at
+
+    @property
+    def is_expired(self):
+        """Trial or paid period has run out — the tenant must pay to keep writing."""
+        from django.utils import timezone
+        end = self.access_ends_at
+        return end is not None and end < timezone.now()
+
+    @property
+    def is_locked(self):
+        """Blocked or suspended by the platform — no access at all."""
+        return self.is_blocked or self.status in ('suspended', 'blocked', 'cancelled')
+
 class PlatformSetting(models.Model):
     """
     A single-row table for platform-wide settings.

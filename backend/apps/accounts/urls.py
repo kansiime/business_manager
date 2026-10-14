@@ -4,6 +4,9 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
     login_view,
+    signup_view,
+    my_businesses,
+    switch_business,
     UserViewSet,
     AuditLogViewSet,
     garage_settings,
@@ -18,6 +21,9 @@ router.register('audit', AuditLogViewSet, basename='audit')
 
 urlpatterns = [
     path('login/', login_view),
+    path('signup/', signup_view),
+    path('businesses/', my_businesses),
+    path('switch-business/', switch_business),
     path('refresh/', TokenRefreshView.as_view()),
     path('settings/', garage_settings),
     path('public-settings/', public_settings),

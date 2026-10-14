@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import api from '@/lib/api';
+import { apiErrorMessage } from '@/lib/session';
 import { useToast } from '@/components/Toast';
 import { useTenantContext } from '@/lib/useTenantContext';
 
@@ -89,8 +90,7 @@ export default function UsersPage() {
       setEditing(null);
       load();
     } catch (err) {
-      const d = err.response?.data;
-      const msg = typeof d === 'object' ? JSON.stringify(d) : 'Could not save user.';
+      const msg = apiErrorMessage(err, 'Could not save user.');
       setError(msg);
       toast.error(msg);
     } finally {

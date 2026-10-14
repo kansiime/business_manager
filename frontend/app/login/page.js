@@ -1,7 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { auth } from '@/lib/api';
+import { saveSession, landingPath, apiErrorMessage } from '@/lib/session';
 import { usePublicBusiness } from '@/lib/usePublicBusiness';
 
 // Copy per business type
@@ -75,13 +77,14 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const res = await auth.login(username, password);
-      localStorage.setItem('access_token', res.data.access);
-      localStorage.setItem('refresh_token', res.data.refresh);
-      localStorage.setItem('user', JSON.stringify(res.data.user));
-      router.push('/dashboard');
+      saveSession(res.data);
+      router.push(landingPath(res.data));
     } catch (err) {
-      setError('Invalid username or password. Please try again.');
-    } finally {
+      setError(
+        err?.response?.status === 401
+          ? 'Invalid username or password. Please try again.'
+          : apiErrorMessage(err)
+      );
       setLoading(false);
     }
   };
@@ -147,13 +150,13 @@ export default function LoginPage() {
 
           <form onSubmit={submit} className="space-y-4">
             <div>
-              <label htmlFor="username">Username</label>
+              <label htmlFor="username">Username or email</label>
               <input
                 id="username"
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter your username"
+                placeholder="Enter your username or email"
                 required
                 autoFocus
                 disabled={loading}
@@ -189,8 +192,14 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="text-center text-xs text-slate-400 mt-8">
-            Need access? Contact your administrator.
+          <p className="text-center text-sm text-slate-500 mt-8">
+            New here?{' '}
+            <Link href="/signup" className="text-blue-600 font-medium hover:underline">
+              Create your business — start a free trial
+            </Link>
+          </p>
+          <p className="text-center text-xs text-slate-400 mt-2">
+            Staff accounts are created by your business admin.
           </p>
         </div>
       </div>

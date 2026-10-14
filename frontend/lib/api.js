@@ -1,8 +1,11 @@
 import axios from 'axios';
+import { clearSession } from './session';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 
 const api = axios.create({ baseURL: API_URL });
+
+const PUBLIC_PATHS = ['/login', '/signup'];
 
 api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
@@ -15,11 +18,20 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401 && typeof window !== 'undefined') {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      localStorage.removeItem('user');
-      if (window.location.pathname !== '/login') window.location.href = '/login';
+    if (typeof window === 'undefined') return Promise.reject(err);
+    const status = err.response?.status;
+    const path = window.location.pathname;
+
+    if (status === 401) {
+      clearSession();
+      if (!PUBLIC_PATHS.includes(path)) window.location.href = '/login';
+    }
+
+    // Trial / plan ran out: the app is read-only until the owner pays.
+    if (status === 403 && err.response?.data?.code === 'subscription_expired') {
+      if (!path.startsWith('/subscription')) {
+        window.location.href = '/subscription?expired=1';
+      }
     }
     return Promise.reject(err);
   }
@@ -27,7 +39,19 @@ api.interceptors.response.use(
 
 export const auth = {
   login: (u, p) => api.post('/auth/login/', { username: u, password: p }),
+  signup: (data) => api.post('/auth/signup/', data),
   me: () => api.get('/auth/users/me/'),
+  businesses: () => api.get('/auth/businesses/'),
+  createBusiness: (data) => api.post('/auth/businesses/', data),
+  switchBusiness: (tenantId) => api.post('/auth/switch-business/', { tenant_id: tenantId }),
+};
+
+export const billing = {
+  plans: () => api.get('/billing/plans/'),
+  status: () => api.get('/billing/subscription/'),
+  checkout: (plan, billingCycle) =>
+    api.post('/billing/checkout/', { plan, billing_cycle: billingCycle }),
+  verify: (params) => api.post('/billing/verify/', params),
 };
 
 export const downloadFile = async (url, filename) => {

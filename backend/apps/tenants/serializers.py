@@ -45,7 +45,7 @@ class TenantSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'slug', 'created_at']
 
     def get_user_count(self, obj):
-        return obj.users.count()
+        return obj.memberships.filter(is_active=True, user__is_active=True).count()
 
     def get_product_count(self, obj):
         from apps.inventory.models import Product
@@ -101,60 +101,30 @@ class TenantCreateSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         from django.db import transaction
-        from django.utils import timezone
-        from datetime import timedelta
-
-        from apps.accounts.models import User, GarageSettings
+        from apps.accounts.models import User
+        from .services import provision_business
 
         business_type = BusinessType.objects.get(
             slug=validated_data['business_type_slug']
         )
-        plan = validated_data['plan']
 
         with transaction.atomic():
-            # 1. Create the tenant
-            now = timezone.now()
-            if plan == 'trial':
-                status_ = 'trial'
-                trial_ends = now + timedelta(days=14)
-                sub_ends = None
-            else:
-                status_ = 'active'
-                trial_ends = None
-                sub_ends = now + timedelta(days=30)   # first month
-
-            tenant = Tenant.objects.create(
+            owner = User.objects.create_user(
+                username=validated_data['username'],
+                password=validated_data['password'],
+                email=validated_data.get('owner_email', ''),
+                role='admin',
+                phone=validated_data.get('owner_phone', ''),
+            )
+            return provision_business(
+                owner=owner,
                 name=validated_data['business_name'],
                 business_type=business_type,
+                plan=validated_data['plan'],
                 owner_name=validated_data.get('owner_name', ''),
                 owner_email=validated_data.get('owner_email', ''),
                 owner_phone=validated_data.get('owner_phone', ''),
-                plan=plan,
-                status=status_,
-                trial_ends_at=trial_ends,
-                subscription_ends_at=sub_ends,
-)
-            # 2. Create the admin user scoped to the tenant
-            User.objects.create_user(
-                username=validated_data['username'],
-                password=validated_data['password'],
-                role='admin',
-                phone=validated_data.get('owner_phone', ''),
-                tenant=tenant,
-                is_staff=True,
             )
-
-            # 3. Create default business settings
-            GarageSettings.all_objects.create(
-                tenant=tenant,
-                name=validated_data['business_name'],
-                phone=validated_data.get('owner_phone', ''),
-                email=validated_data.get('owner_email', ''),
-                currency_code='UGX',
-                currency_symbol='UGX',
-            )
-
-        return tenant
 
 
 class PlatformSettingSerializer(serializers.ModelSerializer):

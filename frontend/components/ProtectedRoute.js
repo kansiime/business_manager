@@ -28,7 +28,7 @@ export default function ProtectedRoute({ children }) {
 
   const segments = pathname.split('/').filter(Boolean);
   const currentKey = segments[0] || 'dashboard';
-  const universal = ['settings', 'dashboard', 'consultations'];
+  const universal = ['settings', 'dashboard', 'consultations', 'businesses', 'subscription'];
   const allowed =
     !ready || is_super || pages.includes(currentKey) || universal.includes(currentKey);
 

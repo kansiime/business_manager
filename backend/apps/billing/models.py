@@ -1,5 +1,4 @@
 from django.db import models
-from apps.tenants.base import TenantModel
 
 
 class Plan(models.Model):
@@ -41,3 +40,50 @@ class Subscription(models.Model):
 
     def __str__(self):
         return f"{self.tenant.name} — {self.plan.name}"
+
+class Payment(models.Model):
+    """
+    One attempt to pay for a plan. Created at checkout as `pending`, then
+    marked `successful` once the provider confirms it (redirect verification
+    or webhook), at which point the tenant's subscription is extended.
+    """
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('successful', 'Successful'),
+        ('failed', 'Failed'),
+        ('cancelled', 'Cancelled'),
+    ]
+    PROVIDER_CHOICES = [
+        ('flutterwave', 'Flutterwave'),
+        ('manual', 'Manual'),
+    ]
+
+    tenant = models.ForeignKey(
+        'tenants.Tenant', on_delete=models.CASCADE, related_name='payments'
+    )
+    plan = models.ForeignKey(Plan, on_delete=models.PROTECT, related_name='payments')
+    billing_cycle = models.CharField(
+        max_length=10, choices=Subscription.BILLING_CYCLE, default='monthly'
+    )
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    currency = models.CharField(max_length=10, default='UGX')
+
+    provider = models.CharField(max_length=20, choices=PROVIDER_CHOICES)
+    tx_ref = models.CharField(max_length=100, unique=True)
+    provider_tx_id = models.CharField(max_length=100, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    note = models.TextField(blank=True)
+
+    created_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='payments',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+    period_end = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.tenant.name} — {self.plan.name} {self.amount} {self.currency} [{self.status}]"

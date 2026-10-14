@@ -8,6 +8,12 @@ export default function PlanStatusBanner() {
   if (is_super || !plan_status) return null;
 
   const { days_remaining, expired, warning, plan, is_blocked, blocked_reason } = plan_status;
+  const planLabel = plan === 'trial' ? 'free trial' : `${plan} plan`;
+  const payLink = (
+    <Link href="/subscription" className="font-semibold underline">
+      {plan === 'trial' ? 'Choose a plan' : 'Renew now'}
+    </Link>
+  );
 
   // Blocked by super admin
   if (is_blocked) {
@@ -25,9 +31,9 @@ export default function PlanStatusBanner() {
   if (expired) {
     return (
       <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-300">
-        <p className="font-semibold text-red-900">⏰ Your plan has expired</p>
+        <p className="font-semibold text-red-900">⏰ Your {planLabel} has ended</p>
         <p className="text-sm text-red-800 mt-1">
-          Renew your {plan} plan to continue using the system. Contact support to renew.
+          You can still view your records, but you can't add or change anything until you pay. {payLink}
         </p>
       </div>
     );
@@ -38,10 +44,10 @@ export default function PlanStatusBanner() {
     return (
       <div className="mb-6 p-4 rounded-lg bg-amber-50 border border-amber-200">
         <p className="font-semibold text-amber-900">
-          ⚠️ Your {plan} plan expires in {days_remaining} day{days_remaining !== 1 && 's'}
+          ⚠️ Your {planLabel} ends in {days_remaining} day{days_remaining !== 1 && 's'}
         </p>
         <p className="text-sm text-amber-800 mt-1">
-          Renew soon to avoid losing access.
+          Pay before it ends to keep adding records without interruption. {payLink}
         </p>
       </div>
     );
@@ -51,7 +57,8 @@ export default function PlanStatusBanner() {
   if (days_remaining !== null && plan === 'trial') {
     return (
       <div className="mb-6 p-3 rounded-lg bg-blue-50 border border-blue-100 text-sm text-blue-800">
-        🎉 You're on a free trial — {days_remaining} day{days_remaining !== 1 && 's'} remaining.
+        🎉 You're on a free trial — {days_remaining} day{days_remaining !== 1 && 's'} remaining.{' '}
+        <Link href="/subscription" className="font-medium underline">See plans</Link>
       </div>
     );
   }

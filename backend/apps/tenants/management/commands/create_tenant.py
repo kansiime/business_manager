@@ -12,11 +12,9 @@ Usage:
         --plan growth
 """
 from django.core.management.base import BaseCommand, CommandError
-from django.utils import timezone
-from datetime import timedelta
-
 from apps.tenants.models import Tenant, BusinessType
-from apps.accounts.models import User, GarageSettings
+from apps.accounts.models import User
+from apps.tenants.services import provision_business
 
 
 class Command(BaseCommand):
@@ -47,39 +45,24 @@ class Command(BaseCommand):
         if User.objects.filter(username=options['username']).exists():
             raise CommandError(f"Username '{options['username']}' is already taken.")
 
-        # 3. Create the tenant
-        tenant = Tenant.objects.create(
-            name=options['name'],
-            business_type=btype,
-            owner_email=options['owner_email'],
-            owner_phone=options['owner_phone'],
-            plan=options['plan'],
-            status='trial' if options['plan'] == 'trial' else 'active',
-            trial_ends_at=timezone.now() + timedelta(days=14) if options['plan'] == 'trial' else None,
-        )
-        self.stdout.write(self.style.SUCCESS(f'✓ Tenant created: {tenant.name} [{tenant.slug}]'))
-
-        # 4. Create the admin user (scoped to this tenant)
+        # 3. Create the owner, then the tenant + membership + settings
         user = User.objects.create_user(
             username=options['username'],
             password=options['password'],
+            email=options['owner_email'],
             role='admin',
             phone=options['owner_phone'],
-            tenant=tenant,
-            is_staff=True,
         )
-        self.stdout.write(self.style.SUCCESS(f'✓ Admin user created: {user.username}'))
-
-        # 5. Create default business settings
-        settings = GarageSettings.all_objects.create(
-            tenant=tenant,
+        tenant = provision_business(
+            owner=user,
             name=options['name'],
-            phone=options['owner_phone'],
-            email=options['owner_email'],
-            currency_code='UGX',
-            currency_symbol='UGX',
+            business_type=btype,
+            plan=options['plan'],
+            owner_email=options['owner_email'],
+            owner_phone=options['owner_phone'],
         )
-        self.stdout.write(self.style.SUCCESS(f'✓ Settings created for {settings.name}'))
+        self.stdout.write(self.style.SUCCESS(f'✓ Tenant created: {tenant.name} [{tenant.slug}]'))
+        self.stdout.write(self.style.SUCCESS(f'✓ Admin user created: {user.username}'))
 
         self.stdout.write('')
         self.stdout.write(self.style.SUCCESS('✅ Tenant onboarding complete.'))

@@ -1,73 +1,203 @@
 from rest_framework import viewsets, status
-from rest_framework.decorators import api_view, permission_classes, action
+from rest_framework.decorators import (
+    api_view, permission_classes, authentication_classes, throttle_classes, action,
+)
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.throttling import SimpleRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
+from django.db import transaction
 from django.utils import timezone
 
 from .role_matrix import pages_for
 
-from .models import User, GarageSettings, AuditLog
+from .models import User, GarageSettings, AuditLog, Membership
 from .serializers import (
-    UserSerializer, LoginSerializer,
-    GarageSettingsSerializer, AuditLogSerializer,
+    UserSerializer, LoginSerializer, SignupSerializer, CreateBusinessSerializer,
+    GarageSettingsSerializer, AuditLogSerializer, membership_summary,
 )
 from .permissions import IsAdmin
 from .audit import log
 
+# Cap on how many businesses one person can create for themselves.
+MAX_OWNED_BUSINESSES = 10
 
+
+class AuthRateThrottle(SimpleRateThrottle):
+    """Per-IP limit on login / sign-up attempts (rate: REST_FRAMEWORK 'auth')."""
+    scope = 'auth'
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {'scope': self.scope, 'ident': self.get_ident(request)}
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+def issue_tokens(user, membership=None):
+    """JWT pair for `user`, scoped to the business in `membership`."""
+    refresh = RefreshToken.for_user(user)
+    if membership is not None:
+        refresh['role'] = membership.role
+        refresh['tenant_id'] = str(membership.tenant_id)
+    else:
+        refresh['role'] = user.role
+        refresh['tenant_id'] = str(user.tenant_id) if user.tenant_id else None
+    refresh['username'] = user.username
+    return {'access': str(refresh.access_token), 'refresh': str(refresh)}
+
+
+def active_memberships(user):
+    return (
+        Membership.objects
+        .filter(user=user, is_active=True)
+        .select_related('tenant', 'tenant__business_type')
+        .order_by('tenant__name')
+    )
+
+
+def set_current_business(user, membership):
+    """Remember `membership` as the user's last-used business."""
+    user.tenant = membership.tenant
+    user.role = membership.role
+    User.objects.filter(pk=user.pk).update(
+        tenant=membership.tenant, role=membership.role,
+    )
+
+
+def session_payload(user, membership):
+    """Tokens + user + business list, returned by login / sign-up / switch."""
+    if membership is not None:
+        set_current_business(user, membership)
+    memberships = list(active_memberships(user))
+    return {
+        **issue_tokens(user, membership),
+        'user': UserSerializer(user).data,
+        'businesses': [
+            membership_summary(m, current_tenant_id=user.tenant_id)
+            for m in memberships
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Login / sign-up
+# ---------------------------------------------------------------------------
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
+@throttle_classes([AuthRateThrottle])
 def login_view(request):
     serializer = LoginSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
-    user = authenticate(
-        username=serializer.validated_data['username'],
-        password=serializer.validated_data['password'],
-    )
+    identifier = serializer.validated_data['username'].strip()
+    password = serializer.validated_data['password']
+
+    user = authenticate(username=identifier, password=password)
+    if user is None and '@' in identifier:
+        # Allow signing in with email address
+        match = User.objects.filter(email__iexact=identifier).first()
+        if match:
+            user = authenticate(username=match.username, password=password)
     if not user:
         return Response({'error': 'Invalid credentials'}, status=401)
 
-    # --- Plan / status enforcement ---
-    tenant = getattr(user, 'tenant', None)
-    if tenant and user.role != 'super':
-        now = timezone.now()
+    if user.role == 'super':
+        log(request, 'login', 'User', user.id, f'{user.username} logged in')
+        return Response(session_payload(user, None))
 
-        # Blocked or suspended
-        if tenant.is_blocked or tenant.status in ('suspended', 'blocked', 'cancelled'):
-            reason = tenant.blocked_reason or 'Your account has been suspended.'
-            return Response({'error': reason}, status=403)
+    memberships = list(active_memberships(user))
+    if not memberships:
+        return Response(
+            {'error': 'Your account is not linked to any business. Contact your administrator.'},
+            status=403,
+        )
 
-        # Trial / subscription expired?
-        expired = False
-        if tenant.plan == 'trial':
-            if tenant.trial_ends_at and tenant.trial_ends_at < now:
-                expired = True
-        else:
-            if tenant.subscription_ends_at and tenant.subscription_ends_at < now:
-                expired = True
+    # Prefer the last-used business; skip ones the platform has locked.
+    usable = [m for m in memberships if not m.tenant.is_locked]
+    if not usable:
+        reason = memberships[0].tenant.blocked_reason or 'Your account has been suspended.'
+        return Response({'error': reason}, status=403)
+    membership = next((m for m in usable if m.tenant_id == user.tenant_id), usable[0])
 
-        if expired:
-            return Response(
-                {'error': 'Your plan has expired. Please renew to continue.'},
-                status=403,
-            )
-
+    # Expired trials / plans can still sign in: the app is read-only until
+    # they pay (see TenantJWTAuthentication).
+    payload = session_payload(user, membership)
     log(request, 'login', 'User', user.id, f'{user.username} logged in')
-
-    refresh = RefreshToken.for_user(user)
-    refresh['role'] = user.role
-    refresh['tenant_id'] = str(user.tenant_id) if user.tenant_id else None
-    refresh['username'] = user.username
-
-    return Response({
-        'access': str(refresh.access_token),
-        'refresh': str(refresh),
-        'user': UserSerializer(user).data,
-    })
+    return Response(payload)
 
 
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@throttle_classes([AuthRateThrottle])
+def signup_view(request):
+    """
+    Public self-service sign-up: creates the person's account and their first
+    business on a free trial, then signs them in.
+    """
+    serializer = SignupSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    user, tenant = serializer.save()
+    membership = Membership.objects.get(user=user, tenant=tenant)
+    log(request, 'create', 'Tenant', tenant.id, f'{user.username} signed up {tenant.name}')
+    return Response(session_payload(user, membership), status=status.HTTP_201_CREATED)
+
+
+# ---------------------------------------------------------------------------
+# A person's businesses: list, create, switch
+# ---------------------------------------------------------------------------
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def my_businesses(request):
+    user = request.user
+    if user.role == 'super':
+        return Response({'detail': 'Platform admins do not own businesses.'}, status=400)
+
+    if request.method == 'GET':
+        return Response([
+            membership_summary(m, current_tenant_id=user.tenant_id)
+            for m in active_memberships(user)
+        ])
+
+    owned = Membership.objects.filter(user=user, is_owner=True).count()
+    if owned >= MAX_OWNED_BUSINESSES:
+        raise ValidationError(
+            {'detail': f'You can own at most {MAX_OWNED_BUSINESSES} businesses.'}
+        )
+
+    serializer = CreateBusinessSerializer(data=request.data, context={'request': request})
+    serializer.is_valid(raise_exception=True)
+    tenant = serializer.save()
+    membership = Membership.objects.get(user=user, tenant=tenant)
+    log(request, 'create', 'Tenant', tenant.id, f'Created business {tenant.name}')
+    return Response(session_payload(user, membership), status=status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def switch_business(request):
+    user = request.user
+    tenant_id = request.data.get('tenant_id')
+    membership = (
+        active_memberships(user).filter(tenant_id=tenant_id).first()
+        if tenant_id else None
+    )
+    if membership is None:
+        return Response({'detail': 'Business not found.'}, status=404)
+    if membership.tenant.is_locked:
+        return Response(
+            {'detail': membership.tenant.blocked_reason or 'This business is suspended.'},
+            status=403,
+        )
+    return Response(session_payload(user, membership))
+
+
+# ---------------------------------------------------------------------------
+# Staff users within the current business
+# ---------------------------------------------------------------------------
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all().order_by('-id')
     serializer_class = UserSerializer
@@ -78,13 +208,45 @@ class UserViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if user.role == 'super':
             return qs
-        return qs.filter(tenant=user.tenant)
+        return qs.filter(memberships__tenant=user.tenant).distinct()
 
     def perform_create(self, serializer):
         if self.request.user.role == 'super':
             serializer.save()
+            return
+
+        tenant = self.request.user.tenant
+        seats = Membership.objects.filter(tenant=tenant, is_active=True, user__is_active=True).count()
+        if seats >= tenant.max_users:
+            raise ValidationError({
+                'detail': (
+                    f'Your plan allows {tenant.max_users} users. '
+                    'Upgrade your plan to add more.'
+                ),
+            })
+        serializer.save(tenant=tenant)
+
+    def perform_update(self, serializer):
+        if self.request.user.role == 'super':
+            serializer.save()
         else:
+            # Business admins can't move users to another business
             serializer.save(tenant=self.request.user.tenant)
+
+    def perform_destroy(self, instance):
+        if instance == self.request.user:
+            raise ValidationError({'detail': "You can't delete yourself."})
+        if self.request.user.role != 'super':
+            other = Membership.objects.filter(user=instance).exclude(
+                tenant=self.request.user.tenant
+            )
+            if other.exists():
+                # They also work elsewhere: only remove them from this business
+                Membership.objects.filter(
+                    user=instance, tenant=self.request.user.tenant
+                ).delete()
+                return
+        instance.delete()
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def me(self, request):
@@ -108,10 +270,11 @@ class UserViewSet(viewsets.ModelViewSet):
     def available_for_clinic(self, request):
         """Users in this tenant who are NOT yet ClinicalStaff."""
         qs = User.objects.filter(
-            tenant=request.user.tenant,
+            memberships__tenant=request.user.tenant,
+            memberships__is_active=True,
             clinical_staff__isnull=True,
             is_active=True,
-        )
+        ).distinct()
         return Response(UserSerializer(qs, many=True).data)
 
 
@@ -126,7 +289,10 @@ def garage_settings(request):
         # Attach tenant plan info so business owners can see their plan dates
         tenant = getattr(request.user, 'tenant', None)
         if tenant:
+            from apps.billing.models import Subscription
+
             now = timezone.now()
+            sub = Subscription.objects.filter(tenant=tenant).first()
 
             trial_days = None
             if tenant.trial_ends_at:
@@ -136,25 +302,17 @@ def garage_settings(request):
             if tenant.subscription_ends_at:
                 sub_days = (tenant.subscription_ends_at - now).days
 
-            # Trial start = trial_ends - 14 days, Sub start = subscription_ends - 30 days
-            trial_start = (
-                tenant.trial_ends_at - timezone.timedelta(days=14)
-                if tenant.trial_ends_at else None
-            )
-            sub_start = (
-                tenant.subscription_ends_at - timezone.timedelta(days=30)
-                if tenant.subscription_ends_at else None
-            )
-
             data['plan_info'] = {
                 'plan': tenant.plan,
                 'status': tenant.status,
-                'trial_started_at': trial_start.isoformat() if trial_start else None,
+                'trial_started_at': tenant.created_at.isoformat(),
                 'trial_ends_at': (
                     tenant.trial_ends_at.isoformat()
                     if tenant.trial_ends_at else None
                 ),
-                'subscription_started_at': sub_start.isoformat() if sub_start else None,
+                'subscription_started_at': (
+                    sub.started_at.isoformat() if sub else None
+                ),
                 'subscription_ends_at': (
                     tenant.subscription_ends_at.isoformat()
                     if tenant.subscription_ends_at else None
@@ -162,6 +320,7 @@ def garage_settings(request):
                 'trial_days_remaining': trial_days,
                 'subscription_days_remaining': sub_days,
                 'is_trial': tenant.plan == 'trial',
+                'is_expired': tenant.is_expired,
                 'is_blocked': tenant.is_blocked,
             }
 
@@ -179,6 +338,7 @@ def garage_settings(request):
 
 
 @api_view(['GET'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def public_settings(request):
     """
@@ -236,64 +396,6 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(action=action_)
         return qs[:500]
 
-    
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def available_roles(request):
-    """
-    Returns the roles the current user can assign, based on their tenant's
-    business type. A clinic offers doctor/nurse/etc. A garage offers
-    cashier/storekeeper.
-    """
-    GENERIC = [
-        {'key': 'admin',       'label': 'Admin'},
-        {'key': 'manager',     'label': 'Manager'},
-        {'key': 'cashier',     'label': 'Cashier'},
-        {'key': 'storekeeper', 'label': 'Storekeeper'},
-    ]
-    CLINIC = [
-        {'key': 'doctor',       'label': 'Doctor'},
-        {'key': 'nurse',        'label': 'Nurse'},
-        {'key': 'midwife',      'label': 'Midwife'},
-        {'key': 'pharmacist',   'label': 'Pharmacist'},
-        {'key': 'lab_tech',     'label': 'Lab Technician'},
-        {'key': 'radiologist',  'label': 'Radiologist'},
-        {'key': 'receptionist', 'label': 'Receptionist'},
-        {'key': 'accountant',   'label': 'Accountant'},
-    ]
-
-    user = request.user
-
-    if getattr(user, 'role', None) == 'super':
-        return Response(GENERIC + CLINIC)
-
-    tenant = getattr(user, 'tenant', None)
-    if tenant is None:
-        return Response(GENERIC)
-
-    features = tenant.enabled_features or []
-    is_clinic = 'prescriptions' in features or 'appointments' in features
-
-    return Response(GENERIC + (CLINIC if is_clinic else []))
-
-
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def my_pages(request):
-    """
-    Returns the list of pages the current user can access.
-    Frontend uses this to build the navbar and guard routes.
-    """
-    return Response({
-        'role': request.user.role,
-        'pages': pages_for(request.user),
-    })
-
-
-from .role_matrix import pages_for
-
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -308,6 +410,24 @@ def my_pages(request):
     })
 
 
+GENERIC_ROLES = [
+    {'key': 'admin',       'label': 'Admin'},
+    {'key': 'manager',     'label': 'Manager'},
+    {'key': 'cashier',     'label': 'Cashier'},
+    {'key': 'storekeeper', 'label': 'Storekeeper'},
+]
+CLINIC_ROLES = [
+    {'key': 'doctor',       'label': 'Doctor'},
+    {'key': 'nurse',        'label': 'Nurse'},
+    {'key': 'midwife',      'label': 'Midwife'},
+    {'key': 'pharmacist',   'label': 'Pharmacist'},
+    {'key': 'lab_tech',     'label': 'Lab Technician'},
+    {'key': 'radiologist',  'label': 'Radiologist'},
+    {'key': 'receptionist', 'label': 'Receptionist'},
+    {'key': 'accountant',   'label': 'Accountant'},
+]
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def available_roles(request):
@@ -315,33 +435,16 @@ def available_roles(request):
     Roles the current user can assign to a new user.
     Generic roles are always available; clinic roles only for clinic tenants.
     """
-    GENERIC = [
-        {'key': 'admin',       'label': 'Admin'},
-        {'key': 'manager',     'label': 'Manager'},
-        {'key': 'cashier',     'label': 'Cashier'},
-        {'key': 'storekeeper', 'label': 'Storekeeper'},
-    ]
-    CLINIC = [
-        {'key': 'doctor',       'label': 'Doctor'},
-        {'key': 'nurse',        'label': 'Nurse'},
-        {'key': 'midwife',      'label': 'Midwife'},
-        {'key': 'pharmacist',   'label': 'Pharmacist'},
-        {'key': 'lab_tech',     'label': 'Lab Technician'},
-        {'key': 'radiologist',  'label': 'Radiologist'},
-        {'key': 'receptionist', 'label': 'Receptionist'},
-        {'key': 'accountant',   'label': 'Accountant'},
-    ]
-
     user = request.user
 
     if getattr(user, 'role', None) == 'super':
-        return Response(GENERIC + CLINIC)
+        return Response(GENERIC_ROLES + CLINIC_ROLES)
 
     tenant = getattr(user, 'tenant', None)
     if tenant is None:
-        return Response(GENERIC)
+        return Response(GENERIC_ROLES)
 
     features = tenant.enabled_features or []
     is_clinic = 'prescriptions' in features or 'appointments' in features
 
-    return Response(GENERIC + (CLINIC if is_clinic else []))
+    return Response(GENERIC_ROLES + (CLINIC_ROLES if is_clinic else []))

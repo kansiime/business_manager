@@ -153,3 +153,31 @@ class AuditLog(TenantModel):
 
     def __str__(self):
         return f"{self.user} {self.action} {self.model_name}#{self.object_id}"
+
+class Membership(models.Model):
+    """
+    Links a user to a business they can work in, with their role there.
+
+    One person can own or work in several businesses. The JWT carries the
+    business they are currently working in (`tenant_id` claim); the
+    authentication class looks up the matching membership and sets
+    `request.user.tenant` / `request.user.role` for that request.
+    `User.tenant` / `User.role` hold the last business the user worked in.
+    """
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='memberships',
+    )
+    tenant = models.ForeignKey(
+        'tenants.Tenant', on_delete=models.CASCADE, related_name='memberships',
+    )
+    role = models.CharField(max_length=20, choices=User.ROLE_CHOICES, default='cashier')
+    is_owner = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [('user', 'tenant')]
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"{self.user.username} @ {self.tenant.name} ({self.role})"

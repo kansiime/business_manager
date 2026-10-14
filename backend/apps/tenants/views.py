@@ -63,8 +63,9 @@ class TenantViewSet(viewsets.ModelViewSet):
         # Switching TO trial and trial date is missing/past → set +14 days
         if new_plan == 'trial' and old_plan != 'trial':
             if not instance.trial_ends_at or instance.trial_ends_at < now:
+                trial_days = PlatformSetting.load().default_trial_days
                 serializer.save(
-                    trial_ends_at=now + timedelta(days=14),
+                    trial_ends_at=now + timedelta(days=trial_days),
                     subscription_ends_at=None,
                 )
                 return
@@ -224,7 +225,6 @@ def tenant_context(request):
     if tenant is None:
         return Response({'detail': 'No tenant assigned.'}, status=400)
 
-    now = timezone.now()
     today = timezone.localtime().date()
 
     trial_days = None
@@ -237,20 +237,12 @@ def tenant_context(request):
 
     days_remaining = trial_days if tenant.plan == 'trial' else sub_days
 
-    expired = False
-    if tenant.plan == 'trial':
-        if tenant.trial_ends_at and tenant.trial_ends_at < now:
-            expired = True
-    else:
-        if tenant.subscription_ends_at and tenant.subscription_ends_at < now:
-            expired = True
-
-    if tenant.is_blocked or tenant.status in ('suspended', 'blocked'):
-        expired = True
-
     plan_status = {
         'plan': tenant.plan,
         'status': tenant.status,
+        # Expired trials / plans are read-only until paid (see TenantJWTAuthentication)
+        'read_only': tenant.is_expired,
+        'is_locked': tenant.is_locked,
         'is_blocked': tenant.is_blocked,
         'blocked_reason': tenant.blocked_reason or '',
         'trial_ends_at': (
@@ -261,7 +253,7 @@ def tenant_context(request):
             if tenant.subscription_ends_at else None
         ),
         'days_remaining': days_remaining,
-        'expired': expired,
+        'expired': tenant.is_expired or tenant.is_locked,
         'warning': (
             days_remaining is not None
             and 0 <= days_remaining <= 7

@@ -12,5 +12,6 @@ urlpatterns = [
     path('api/expenses/', include('apps.expenses.urls')),
     path('api/returns/', include('apps.returns.urls')),
     path('api/reports/', include('apps.reports.urls')),
-    path('api/clinic/', include('apps.clinic.urls')),  # ← new
+    path('api/clinic/', include('apps.clinic.urls')),
+    path('api/billing/', include('apps.billing.urls')),
 ]

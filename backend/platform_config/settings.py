@@ -115,7 +115,8 @@ else:
             'PASSWORD': os.getenv('DB_PASSWORD', 'postgres'),
             'HOST': os.getenv('DB_HOST', 'localhost'),
             'PORT': os.getenv('DB_PORT', '5432'),
-            'OPTIONS': {'sslmode': 'require'},
+            # 'disable' for a local Postgres without TLS
+            'OPTIONS': {'sslmode': os.getenv('DB_SSLMODE', 'require')},
         }
     }
 
@@ -124,9 +125,13 @@ else:
 # ---------------------------------------------------------------------------
 AUTH_USER_MODEL = 'accounts.User'
 
+# Enforced on self-service sign-up (SignupSerializer calls validate_password).
 AUTH_PASSWORD_VALIDATORS = [
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-     'OPTIONS': {'min_length': 6}},
+     'OPTIONS': {'min_length': 8}},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
 # ---------------------------------------------------------------------------
@@ -172,6 +177,9 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ),
     'URL_FORMAT_OVERRIDE': None,
+    'DEFAULT_THROTTLE_RATES': {
+        'auth': os.environ.get('AUTH_THROTTLE_RATE', '20/min'),
+    },
     'DEFAULT_RENDERER_CLASSES': (
         'rest_framework.renderers.JSONRenderer',
     ) if not DEBUG else (
@@ -190,6 +198,20 @@ EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'
 DEFAULT_FROM_EMAIL = os.environ.get(
     'DEFAULT_FROM_EMAIL',
     EMAIL_HOST_USER or 'no-reply@businessmanager.local',
+)
+
+# ---------------------------------------------------------------------------
+# Subscription billing (Flutterwave — mobile money, card, bank)
+# ---------------------------------------------------------------------------
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+FLUTTERWAVE_SECRET_KEY = os.environ.get('FLUTTERWAVE_SECRET_KEY', '')
+# Secret hash set in Flutterwave dashboard → Settings → Webhooks
+FLUTTERWAVE_WEBHOOK_HASH = os.environ.get('FLUTTERWAVE_WEBHOOK_HASH', '')
+# Shown to owners when online payment isn't configured
+MANUAL_PAYMENT_INSTRUCTIONS = os.environ.get(
+    'MANUAL_PAYMENT_INSTRUCTIONS',
+    'Send the plan amount by mobile money to our support number, using your '
+    'business name as the reference, then contact support to activate your plan.',
 )
 
 # ---------------------------------------------------------------------------

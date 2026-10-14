@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import TenantPayments from '@/components/TenantPayments';
 import api from '@/lib/api';
 import { useUser } from '@/lib/useUser';
 import { useToast } from '@/components/Toast';
@@ -358,6 +359,8 @@ export default function TenantDetailPage() {
           </div>
         )}
       </div>
+
+      <TenantPayments tenantId={id} plans={plans} onRecorded={load} />
 
       {/* Edit form */}
       <div className="card mb-6">
