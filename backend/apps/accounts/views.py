@@ -68,7 +68,12 @@ def set_current_business(user, membership):
 
 
 def session_payload(user, membership):
-    """Tokens + user + business list, returned by login / sign-up / switch."""
+    """
+    Tokens + user + business list + app-shell context, returned by login /
+    sign-up / switch so the app can render straight away.
+    """
+    from apps.tenants.views import build_context
+
     if membership is not None:
         set_current_business(user, membership)
     memberships = list(active_memberships(user))
@@ -79,6 +84,7 @@ def session_payload(user, membership):
             membership_summary(m, current_tenant_id=user.tenant_id)
             for m in memberships
         ],
+        'context': build_context(user),
     }
 
 

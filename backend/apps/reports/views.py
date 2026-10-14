@@ -1,8 +1,8 @@
 from decimal import Decimal
 from datetime import timedelta, datetime
 
-from django.db.models import Sum, Count, F
-from django.db.models.functions import TruncDate
+from django.db.models import Sum, Count, F, Q, Value, DecimalField, ExpressionWrapper
+from django.db.models.functions import Coalesce, TruncDate
 from django.http import HttpResponse
 from django.utils import timezone
 
@@ -89,77 +89,135 @@ def _filter_expenses_by_date(qs, start, end):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def dashboard_summary(request):
+    """
+    Headline numbers for today and this month.
+
+    Each table is read once, with today/month computed side by side using
+    conditional aggregates, so the endpoint costs ~9 queries whatever the
+    amount of data (it used to be 28 and loaded every product, debt and
+    sale item into Python).
+    """
     today = _local_today()
     month_start = today.replace(day=1)
 
-    def aggregate_sales(start, end):
-        sales = _filter_by_local_date(Sale.objects.all(), start, end)
-        total = sales.aggregate(t=Sum('total_amount'))['t'] or Decimal('0')
-        items = SaleItem.objects.filter(sale__in=sales)
-        profit = sum(
-            (i.quantity * (i.unit_price - i.cost_price) for i in items),
-            Decimal('0'),
+    def local_range(start, end, field='created_at'):
+        tz = timezone.get_current_timezone()
+        start_dt = timezone.make_aware(datetime.combine(start, datetime.min.time()), tz)
+        end_dt = timezone.make_aware(
+            datetime.combine(end + timedelta(days=1), datetime.min.time()), tz
         )
-        return {'total': float(total), 'profit': float(profit), 'count': sales.count()}
+        return Q(**{f'{field}__gte': start_dt, f'{field}__lt': end_dt})
 
-    def aggregate_expenses(start, end):
-        qs = _filter_expenses_by_date(Expense.objects.all(), start, end)
-        total = qs.aggregate(t=Sum('amount'))['t'] or Decimal('0')
-        return {'total': float(total), 'count': qs.count()}
+    money = DecimalField(max_digits=18, decimal_places=2)
+    zero = Value(Decimal('0'), output_field=money)
 
-    def aggregate_returns(start, end):
-        qs = _filter_by_local_date(Return.objects.all(), start, end)
-        total = qs.aggregate(t=Sum('total_amount'))['t'] or Decimal('0')
-        return {
-            'total': float(total),
-            'count': qs.count(),
-            'sales': qs.filter(return_type='sales').count(),
-            'purchase': qs.filter(return_type='purchase').count(),
-        }
+    def total(field, cond):
+        return Coalesce(Sum(field, filter=cond), zero, output_field=money)
 
-    purchases_today = _filter_by_local_date(Purchase.objects.all(), today, today)
-    purchases_month = _filter_by_local_date(Purchase.objects.all(), month_start, today)
+    is_today = local_range(today, today)
+    is_month = local_range(month_start, today)
 
-    receivables = Debt.objects.filter(debt_type='receivable').exclude(status='paid')
-    payables = Debt.objects.filter(debt_type='payable').exclude(status='paid')
+    # Sales: totals + counts, then profit from their items
+    sales = _filter_by_local_date(Sale.objects.all(), month_start, today).aggregate(
+        today_total=total('total_amount', is_today),
+        month_total=total('total_amount', Q()),
+        today_count=Count('id', filter=is_today),
+        month_count=Count('id'),
+    )
+    item_profit = ExpressionWrapper(
+        F('quantity') * (F('unit_price') - F('cost_price')), output_field=money,
+    )
+    profit = SaleItem.objects.filter(
+        sale__in=_filter_by_local_date(Sale.objects.all(), month_start, today)
+    ).aggregate(
+        today=total(item_profit, local_range(today, today, 'sale__created_at')),
+        month=total(item_profit, Q()),
+    )
 
-    low_qs = Product.objects.filter(quantity__lte=F('reorder_level'))
+    expenses = _filter_expenses_by_date(Expense.objects.all(), month_start, today).aggregate(
+        today_total=total('amount', Q(expense_date=today)),
+        month_total=total('amount', Q()),
+        today_count=Count('id', filter=Q(expense_date=today)),
+        month_count=Count('id'),
+    )
+
+    returns = _filter_by_local_date(Return.objects.all(), month_start, today).aggregate(
+        today_total=total('total_amount', is_today),
+        month_total=total('total_amount', Q()),
+        today_count=Count('id', filter=is_today),
+        month_count=Count('id'),
+        today_sales=Count('id', filter=is_today & Q(return_type='sales')),
+        month_sales=Count('id', filter=Q(return_type='sales')),
+        today_purchase=Count('id', filter=is_today & Q(return_type='purchase')),
+        month_purchase=Count('id', filter=Q(return_type='purchase')),
+    )
+
+    purchases = _filter_by_local_date(Purchase.objects.all(), month_start, today).aggregate(
+        today=total('total_amount', is_today),
+        month=total('total_amount', is_month),
+    )
+
+    balance = ExpressionWrapper(F('amount') - F('amount_paid'), output_field=money)
+    debts = Debt.objects.exclude(status='paid').aggregate(
+        receivables=total(balance, Q(debt_type='receivable')),
+        payables=total(balance, Q(debt_type='payable')),
+    )
+
+    low = Q(quantity__lte=F('reorder_level'))
+    stock = Product.objects.aggregate(
+        value=total(
+            ExpressionWrapper(F('quantity') * F('cost_price'), output_field=money), Q(),
+        ),
+        low_count=Count('id', filter=low),
+    )
     low_stock_items = list(
-        low_qs.values('id', 'name', 'sku', 'quantity', 'reorder_level')[:10]
+        Product.objects.filter(low).values('id', 'name', 'sku', 'quantity', 'reorder_level')[:10]
     )
 
     shop = GarageSettings.load()
 
-    today_sales = aggregate_sales(today, today)
-    month_sales = aggregate_sales(month_start, today)
-    today_expenses = aggregate_expenses(today, today)
-    month_expenses = aggregate_expenses(month_start, today)
-    today_returns = aggregate_returns(today, today)
-    month_returns = aggregate_returns(month_start, today)
+    today_sales = {
+        'total': float(sales['today_total']),
+        'profit': float(profit['today']),
+        'count': sales['today_count'],
+    }
+    month_sales = {
+        'total': float(sales['month_total']),
+        'profit': float(profit['month']),
+        'count': sales['month_count'],
+    }
+    today_returns = {
+        'total': float(returns['today_total']),
+        'count': returns['today_count'],
+        'sales': returns['today_sales'],
+        'purchase': returns['today_purchase'],
+    }
+    month_returns = {
+        'total': float(returns['month_total']),
+        'count': returns['month_count'],
+        'sales': returns['month_sales'],
+        'purchase': returns['month_purchase'],
+    }
+    expenses_today = float(expenses['today_total'])
+    expenses_month = float(expenses['month_total'])
 
     return Response({
         'today': today_sales,
         'month': month_sales,
-        'expenses_today': today_expenses['total'],
-        'expenses_today_count': today_expenses['count'],
-        'expenses_month': month_expenses['total'],
-        'expenses_month_count': month_expenses['count'],
-        'net_profit_today': today_sales['profit'] - today_expenses['total'] - today_returns['total'],
-        'net_profit_month': month_sales['profit'] - month_expenses['total'] - month_returns['total'],
+        'expenses_today': expenses_today,
+        'expenses_today_count': expenses['today_count'],
+        'expenses_month': expenses_month,
+        'expenses_month_count': expenses['month_count'],
+        'net_profit_today': today_sales['profit'] - expenses_today - today_returns['total'],
+        'net_profit_month': month_sales['profit'] - expenses_month - month_returns['total'],
         'returns_today': today_returns,
         'returns_month': month_returns,
-        'purchases_today': float(
-            purchases_today.aggregate(t=Sum('total_amount'))['t'] or Decimal('0')
-        ),
-        'purchases_month': float(
-            purchases_month.aggregate(t=Sum('total_amount'))['t'] or Decimal('0')
-        ),
-        'receivables': float(sum((d.balance for d in receivables), Decimal('0'))),
-        'payables': float(sum((d.balance for d in payables), Decimal('0'))),
-        'stock_value': float(
-            sum((p.stock_value for p in Product.objects.all()), Decimal('0'))
-        ),
-        'low_stock': low_qs.count(),
+        'purchases_today': float(purchases['today']),
+        'purchases_month': float(purchases['month']),
+        'receivables': float(debts['receivables']),
+        'payables': float(debts['payables']),
+        'stock_value': float(stock['value']),
+        'low_stock': stock['low_count'],
         'low_stock_items': low_stock_items,
         'currency': shop.currency_symbol or shop.currency_code or 'UGX',
         'business_name': shop.name,

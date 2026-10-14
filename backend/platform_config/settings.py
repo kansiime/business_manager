@@ -103,6 +103,7 @@ if os.environ.get('DATABASE_URL'):
         'default': dj_database_url.config(
             default=os.environ['DATABASE_URL'],
             conn_max_age=600,
+            conn_health_checks=True,
             ssl_require=True,
         )
     }
@@ -117,6 +118,10 @@ else:
             'PORT': os.getenv('DB_PORT', '5432'),
             # 'disable' for a local Postgres without TLS
             'OPTIONS': {'sslmode': os.getenv('DB_SSLMODE', 'require')},
+            # Reuse connections: a new TLS connection to a remote DB costs
+            # seconds. (Under `runserver`, only `--nothreading` can reuse it.)
+            'CONN_MAX_AGE': int(os.getenv('DB_CONN_MAX_AGE', '600')),
+            'CONN_HEALTH_CHECKS': True,
         }
     }
 

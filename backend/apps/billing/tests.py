@@ -341,3 +341,62 @@ class CrossBusinessIsolationTests(TestCase):
             self.assertEqual(rows, [], url)
             self.assertEqual(bob.get(f'{url}{obj_id}/').status_code, 404, url)
             self.assertEqual(jane.get(f'{url}{obj_id}/').status_code, 200, url)
+
+
+class SessionContextAndAuthTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.client = APIClient()
+        self.session = signup(self.client).data
+
+    def test_login_includes_app_context(self):
+        res = self.client.post(
+            '/api/auth/login/', {'username': 'jane', 'password': 'Str0ng-pass-123'}, format='json'
+        )
+        ctx = res.data['context']
+        self.assertEqual(ctx['tenant']['name'], 'Mukasa Agro')
+        self.assertIn('sales', ctx['pages'])
+        self.assertEqual(ctx['role'], 'admin')
+        self.assertEqual(ctx['plan_status']['plan'], 'trial')
+
+    def test_authenticated_request_uses_one_query_for_auth(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        client = authed(self.session['access'])
+        with CaptureQueriesContext(connection) as ctx:
+            res = client.get('/api/auth/my-pages/')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(ctx.captured_queries), 1)
+
+    def test_deactivated_user_is_rejected(self):
+        User.objects.filter(username='jane').update(is_active=False)
+        res = authed(self.session['access']).get('/api/tenants/context/')
+        self.assertEqual(res.status_code, 401)
+
+    def test_dashboard_summary_totals(self):
+        from apps.debts.models import Debt
+        from apps.inventory.models import Product
+        from apps.sales.models import Sale, SaleItem
+
+        tenant = Tenant.objects.get(name='Mukasa Agro')
+        product = Product.all_objects.create(
+            tenant=tenant, name='Seeds', sku='S1', quantity=3, reorder_level=5,
+            cost_price=Decimal('100'), selling_price=Decimal('150'),
+        )
+        sale = Sale.all_objects.create(tenant=tenant, reference='R1', total_amount=Decimal('300'))
+        SaleItem.objects.create(
+            sale=sale, product=product, quantity=2,
+            unit_price=Decimal('150'), cost_price=Decimal('100'),
+        )
+        Debt.all_objects.create(
+            tenant=tenant, debt_type='receivable', party_name='Ann',
+            amount=Decimal('500'), amount_paid=Decimal('200'),
+        )
+
+        res = authed(self.session['access']).get('/api/reports/dashboard/')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data['today'], {'total': 300.0, 'profit': 100.0, 'count': 1})
+        self.assertEqual(res.data['receivables'], 300.0)
+        self.assertEqual(res.data['stock_value'], 300.0)
+        self.assertEqual(res.data['low_stock'], 1)

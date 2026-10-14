@@ -19,6 +19,7 @@ from rest_framework import exceptions
 from rest_framework.permissions import SAFE_METHODS
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import AuthenticationFailed
+from rest_framework_simplejwt.settings import api_settings
 
 from apps.tenants.base import set_current_tenant, clear_current_tenant
 
@@ -71,6 +72,31 @@ def resolve_membership(user, tenant_id=None):
 
 
 class TenantJWTAuthentication(JWTAuthentication):
+    def get_user(self, validated_token):
+        """
+        Load the user and their membership for the token's business in one
+        query (the database is a network hop away, so round trips matter).
+        Falls back to the standard lookup for super admins / old tokens.
+        """
+        from .models import Membership
+
+        tenant_id = validated_token.get('tenant_id')
+        user_id = validated_token.get(api_settings.USER_ID_CLAIM)
+        if tenant_id and user_id is not None and not getattr(api_settings, 'CHECK_REVOKE_TOKEN', False):
+            membership = (
+                Membership.objects
+                .select_related('user', 'tenant', 'tenant__business_type')
+                .filter(user_id=user_id, tenant_id=tenant_id, is_active=True)
+                .first()
+            )
+            if membership is not None:
+                user = membership.user
+                if not user.is_active:
+                    raise AuthenticationFailed('User is inactive', code='user_inactive')
+                user._token_membership = membership
+                return user
+        return super().get_user(validated_token)
+
     def authenticate(self, request):
         result = super().authenticate(request)
         if result is None:
@@ -83,7 +109,9 @@ class TenantJWTAuthentication(JWTAuthentication):
             clear_current_tenant()
             return user, token
 
-        membership = resolve_membership(user, token.get('tenant_id'))
+        membership = getattr(user, '_token_membership', None)
+        if membership is None:
+            membership = resolve_membership(user, token.get('tenant_id'))
         if membership is None:
             raise AuthenticationFailed('You no longer have access to this business.')
 

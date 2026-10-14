@@ -10,10 +10,22 @@ export function saveSession(data) {
   if (data.businesses) {
     localStorage.setItem('businesses', JSON.stringify(data.businesses));
   }
+  if (data.context) {
+    localStorage.setItem('tenant_context', JSON.stringify(data.context));
+  }
+}
+
+/** Last app-shell context (menu, features, plan) — lets the app render instantly. */
+export function cachedContext() {
+  try {
+    return JSON.parse(localStorage.getItem('tenant_context') || 'null');
+  } catch {
+    return null;
+  }
 }
 
 export function clearSession() {
-  ['access_token', 'refresh_token', 'user', 'businesses'].forEach((k) =>
+  ['access_token', 'refresh_token', 'user', 'businesses', 'tenant_context'].forEach((k) =>
     localStorage.removeItem(k)
   );
 }

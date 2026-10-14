@@ -187,7 +187,18 @@ def current_tenant(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def tenant_context(request):
-    user = request.user
+    return Response(build_context(request.user))
+
+
+def build_context(user):
+    """
+    Everything the app shell needs: business, features, the pages this user
+    may open, announcement and plan status. Also returned by login / sign-up /
+    switch-business so the app can render without waiting for this endpoint.
+    """
+    from apps.accounts.role_matrix import pages_for
+
+    shell = {'role': user.role, 'pages': pages_for(user)}
     platform = PlatformSetting.load()
 
     announcement = None
@@ -213,17 +224,19 @@ def tenant_context(request):
             }
 
     if getattr(user, 'role', None) == 'super':
-        return Response({
+        return {
+            **shell,
             'is_super': True,
             'tenant': None,
             'enabled_features': [],
             'announcement': announcement,
             'plan_status': None,
-        })
+        }
 
     tenant = getattr(user, 'tenant', None)
     if tenant is None:
-        return Response({'detail': 'No tenant assigned.'}, status=400)
+        return {**shell, 'is_super': False, 'tenant': None, 'enabled_features': [],
+                'announcement': announcement, 'plan_status': None}
 
     today = timezone.localtime().date()
 
@@ -260,7 +273,8 @@ def tenant_context(request):
         ),
     }
 
-    return Response({
+    return {
+        **shell,
         'is_super': False,
         'tenant': {
             'id': str(tenant.id),
@@ -271,7 +285,7 @@ def tenant_context(request):
         'enabled_features': tenant.enabled_features,
         'announcement': announcement,
         'plan_status': plan_status,
-    })
+    }
 
 
 # ---------------------------------------------------------------------------
