@@ -48,7 +48,13 @@ class ProductSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         """Prevent changing quantity via product edit — must use StockMovement."""
         validated_data.pop('quantity', None)
-        return super().update(instance, validated_data)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        # Save only the edited fields: a full save() would also write back
+        # the quantity loaded at the start of this request, undoing any
+        # sale that happened in between.
+        instance.save(update_fields=list(validated_data) + ['updated_at'])
+        return instance
 
 
 class StockMovementSerializer(serializers.ModelSerializer):

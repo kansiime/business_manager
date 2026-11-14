@@ -4,9 +4,10 @@ from rest_framework.permissions import IsAuthenticated
 from .models import Return
 from .serializers import ReturnSerializer
 from apps.accounts.permissions import RoleBasedPermission
+from apps.tenants.mixins import TenantScopedMixin
 
 
-class ReturnViewSet(viewsets.ModelViewSet):
+class ReturnViewSet(TenantScopedMixin, viewsets.ModelViewSet):
     queryset = Return.objects.select_related('user').all()
     serializer_class = ReturnSerializer
     permission_classes = [IsAuthenticated, RoleBasedPermission]

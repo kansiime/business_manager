@@ -114,7 +114,7 @@ class StockReconciliation(TenantModel):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
+        from .stock import set_stock
         self.difference = self.physical_quantity - self.system_quantity
         super().save(*args, **kwargs)
-        self.product.quantity = self.physical_quantity
-        self.product.save()
+        set_stock(self.product, self.physical_quantity)

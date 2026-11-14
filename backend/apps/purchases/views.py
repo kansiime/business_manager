@@ -5,17 +5,18 @@ from .models import Purchase
 from .serializers import PurchaseSerializer
 from apps.accounts.permissions import RoleBasedPermission
 from apps.accounts.audit import log
+from apps.tenants.mixins import TenantScopedMixin
 from apps.debts.models import Debt
 
 
-class PurchaseViewSet(viewsets.ModelViewSet):
+class PurchaseViewSet(TenantScopedMixin, viewsets.ModelViewSet):
     queryset = Purchase.objects.all().order_by('-id')
     serializer_class = PurchaseSerializer
     permission_classes = [IsAuthenticated, RoleBasedPermission]
     allowed_roles = ['admin', 'manager', 'storekeeper']
 
     def perform_create(self, serializer):
-        purchase = serializer.save(user=self.request.user)
+        purchase = self.save_with_tenant(serializer, user=self.request.user)
         log(self.request, 'create', 'Purchase', purchase.id,
             f'Purchase {purchase.reference} — {purchase.total_amount}')
 

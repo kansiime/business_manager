@@ -18,17 +18,18 @@ from .serializers import SaleSerializer
 from apps.accounts.permissions import RoleBasedPermission
 from apps.accounts.models import GarageSettings
 from apps.accounts.audit import log
+from apps.tenants.mixins import TenantScopedMixin
 from apps.debts.models import Debt
 
 
-class SaleViewSet(viewsets.ModelViewSet):
+class SaleViewSet(TenantScopedMixin, viewsets.ModelViewSet):
     queryset = Sale.objects.all().order_by('-id')
     serializer_class = SaleSerializer
     permission_classes = [IsAuthenticated, RoleBasedPermission]
     allowed_roles = ['admin', 'manager', 'cashier', 'super']
 
     def perform_create(self, serializer):
-        sale = serializer.save(user=self.request.user)
+        sale = self.save_with_tenant(serializer, user=self.request.user)
         log(
             self.request, 'create', 'Sale', sale.id,
             f'Sale {sale.reference} — {sale.total_amount}',

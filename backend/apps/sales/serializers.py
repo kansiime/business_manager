@@ -4,6 +4,14 @@ from decimal import Decimal
 
 from .models import Sale, SaleItem
 from apps.inventory.models import StockMovement
+from apps.inventory.stock import InsufficientStock, add_stock, remove_stock
+
+
+def _take_stock(product, quantity):
+    try:
+        remove_stock(product, quantity)
+    except InsufficientStock as e:
+        raise serializers.ValidationError({'items': [str(e)]})
 
 
 class SaleItemSerializer(serializers.ModelSerializer):
@@ -69,9 +77,7 @@ class SaleSerializer(serializers.ModelSerializer):
                     cost_price=product.cost_price,
                     **item,
                 )
-                # Reduce stock
-                product.quantity -= item['quantity']
-                product.save()
+                _take_stock(product, item['quantity'])
                 StockMovement.objects.create(
                     product=product, movement_type='out',
                     quantity=item['quantity'], reference=sale.reference,
@@ -82,29 +88,26 @@ class SaleSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         items_data = validated_data.pop('items', None)
 
-        # Restore old stock before rewriting items
-        for old_item in instance.items.all():
-            product = old_item.product
-            product.quantity += old_item.quantity
-            product.save()
-        instance.items.all().delete()
+        with transaction.atomic():
+            for k, v in validated_data.items():
+                setattr(instance, k, v)
 
-        # Apply non-item fields
-        for k, v in validated_data.items():
-            setattr(instance, k, v)
+            if items_data is not None:
+                # Put the old items back into stock before taking the new ones
+                for old_item in instance.items.select_related('product'):
+                    add_stock(old_item.product, old_item.quantity)
+                instance.items.all().delete()
 
-        total = Decimal('0')
-        if items_data is not None:
-            for item in items_data:
-                product = item['product']
-                SaleItem.objects.create(
-                    sale=instance,
-                    cost_price=product.cost_price,
-                    **item,
-                )
-                product.quantity -= item['quantity']
-                product.save()
-                total += Decimal(item['quantity']) * Decimal(item['unit_price'])
-            instance.total_amount = total
-        instance.save()
+                total = Decimal('0')
+                for item in items_data:
+                    product = item['product']
+                    SaleItem.objects.create(
+                        sale=instance,
+                        cost_price=product.cost_price,
+                        **item,
+                    )
+                    _take_stock(product, item['quantity'])
+                    total += Decimal(item['quantity']) * Decimal(item['unit_price'])
+                instance.total_amount = total
+            instance.save()
         return instance

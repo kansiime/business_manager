@@ -1,5 +1,7 @@
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Q
 
 from .models import Category, Supplier, Product, StockMovement, StockReconciliation
@@ -9,33 +11,8 @@ from .serializers import (
 )
 from apps.accounts.permissions import RoleBasedPermission
 from apps.accounts.audit import log
-
-
-class TenantScopedMixin:
-    """
-    Every inventory viewset uses this to guarantee tenant isolation.
-
-    The `TenantManager` on the models filters by a thread-local tenant
-    set by middleware. If middleware isn't running (e.g. management
-    commands, tests, or a misconfigured MIDDLEWARE list), that thread-local
-    is None and the manager silently returns ALL rows. This mixin bypasses
-    that by filtering on the authenticated user's actual `tenant_id`.
-    """
-    def get_queryset(self):
-        qs = super().get_queryset()
-        user = self.request.user
-        if user.is_authenticated and user.tenant_id:
-            return qs.filter(tenant_id=user.tenant_id)
-        return qs.none()
-
-    def perform_create(self, serializer):
-        # Auto-attach the tenant on create so new rows can't land in the
-        # wrong tenant even if the middleware didn't set the thread-local.
-        user = self.request.user
-        if user.is_authenticated and user.tenant_id:
-            serializer.save(tenant_id=user.tenant_id)
-        else:
-            serializer.save()
+from apps.tenants.mixins import TenantScopedMixin
+from .stock import InsufficientStock, add_stock, remove_stock, set_stock, lock_product
 
 
 class CategoryViewSet(TenantScopedMixin, viewsets.ModelViewSet):
@@ -88,19 +65,22 @@ class StockMovementViewSet(TenantScopedMixin, viewsets.ModelViewSet):
         user = self.request.user
         tenant = getattr(user, 'tenant', None)
 
-        movement = serializer.save(
-            user=user,
-            tenant=tenant,
-        )
-        product = movement.product
+        with transaction.atomic():
+            movement = serializer.save(
+                user=user,
+                tenant=tenant,
+            )
+            product = movement.product
 
-        if movement.movement_type == 'in':
-            product.quantity += movement.quantity
-        elif movement.movement_type == 'out':
-            product.quantity -= movement.quantity
-        else:
-            product.quantity = movement.quantity
-        product.save()
+            if movement.movement_type == 'in':
+                add_stock(product, movement.quantity)
+            elif movement.movement_type == 'out':
+                try:
+                    remove_stock(product, movement.quantity)
+                except InsufficientStock as e:
+                    raise ValidationError({'quantity': [str(e)]})
+            else:
+                set_stock(product, movement.quantity)
 
         log(
             self.request,
@@ -123,11 +103,14 @@ class StockReconciliationViewSet(TenantScopedMixin, viewsets.ModelViewSet):
         tenant = getattr(user, 'tenant', None)
 
         product = serializer.validated_data['product']
-        rec = serializer.save(
-            user=user,
-            tenant=tenant,
-            system_quantity=product.quantity,
-        )
+        with transaction.atomic():
+            # Lock the product so no sale lands between reading the system
+            # count and replacing it with the physical count.
+            rec = serializer.save(
+                user=user,
+                tenant=tenant,
+                system_quantity=lock_product(product),
+            )
 
         log(
             self.request,

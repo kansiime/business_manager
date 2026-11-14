@@ -603,6 +603,7 @@ class PrescriptionViewSet(ClinicBaseViewSet):
     @action(detail=True, methods=['post'])
     def dispense(self, request, pk=None):
         from apps.inventory.models import StockMovement
+        from apps.inventory.stock import InsufficientStock, remove_stock
 
         rx = self.get_object()
         quantity_to_dispense = int(request.data.get('quantity', rx.quantity))
@@ -624,18 +625,17 @@ class PrescriptionViewSet(ClinicBaseViewSet):
                 return Response(PrescriptionSerializer(rx).data)
 
             product = rx.product
-            if product.quantity < quantity_to_dispense:
+            try:
+                remove_stock(product, quantity_to_dispense)
+            except InsufficientStock as e:
                 return Response(
                     {
-                        'detail': f'Only {product.quantity} in stock, '
+                        'detail': f'Only {e.available} in stock, '
                                   f'{quantity_to_dispense} requested.',
-                        'available': product.quantity,
+                        'available': e.available,
                     },
                     status=400,
                 )
-
-            product.quantity -= quantity_to_dispense
-            product.save()
 
             StockMovement.all_objects.create(
                 tenant=request.user.tenant,
@@ -848,6 +848,7 @@ class ClinicInvoiceItemViewSet(ClinicBaseViewSet):
 
     def perform_create(self, serializer):
         from apps.inventory.models import StockMovement
+        from apps.inventory.stock import remove_stock
 
         with transaction.atomic():
             item = serializer.save()
@@ -877,8 +878,9 @@ class ClinicInvoiceItemViewSet(ClinicBaseViewSet):
                         notes=f'Auto-consumed for service: {item.service.name}',
                         user=self.request.user,
                     )
-                    product.quantity -= qty
-                    product.save()
+                    # Consumables are recorded after the service was given,
+                    # so a shortfall on record must not block the invoice.
+                    remove_stock(product, qty, allow_negative=True)
 
                 if hasattr(item, 'consumables_recorded'):
                     item.consumables_recorded = True

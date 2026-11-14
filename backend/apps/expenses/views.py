@@ -5,16 +5,17 @@ from .models import Expense, ExpenseCategory
 from .serializers import ExpenseSerializer, ExpenseCategorySerializer
 from apps.accounts.permissions import RoleBasedPermission
 from apps.accounts.audit import log
+from apps.tenants.mixins import TenantScopedMixin
 
 
-class ExpenseCategoryViewSet(viewsets.ModelViewSet):
+class ExpenseCategoryViewSet(TenantScopedMixin, viewsets.ModelViewSet):
     queryset = ExpenseCategory.objects.all()
     serializer_class = ExpenseCategorySerializer
     permission_classes = [IsAuthenticated, RoleBasedPermission]
     allowed_roles = ['admin', 'manager']
 
 
-class ExpenseViewSet(viewsets.ModelViewSet):
+class ExpenseViewSet(TenantScopedMixin, viewsets.ModelViewSet):
     queryset = Expense.objects.select_related('category', 'user').all()
     serializer_class = ExpenseSerializer
     permission_classes = [IsAuthenticated, RoleBasedPermission]
@@ -34,7 +35,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        expense = serializer.save(user=self.request.user)
+        expense = self.save_with_tenant(serializer, user=self.request.user)
         log(self.request, 'create', 'Expense', expense.id,
             f"Expense {expense.description} — {expense.amount}")
 

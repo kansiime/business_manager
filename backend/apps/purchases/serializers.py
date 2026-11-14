@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from .models import Purchase, PurchaseItem
 from apps.inventory.models import StockMovement
+from apps.inventory.stock import add_stock
 
 
 class PurchaseItemSerializer(serializers.ModelSerializer):
@@ -58,24 +59,31 @@ class PurchaseSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         items_data = validated_data.pop('items', None)
-        old_status = instance.status
 
-        for k, v in validated_data.items():
-            setattr(instance, k, v)
+        with transaction.atomic():
+            # Lock the purchase so two requests can't both see it as
+            # not-yet-received and add its stock twice.
+            old_status = (
+                Purchase.all_objects.select_for_update()
+                .values_list('status', flat=True).get(pk=instance.pk)
+            )
 
-        if items_data is not None:
-            instance.items.all().delete()
-            total = Decimal('0')
-            for item in items_data:
-                PurchaseItem.objects.create(purchase=instance, **item)
-                total += Decimal(item['quantity']) * Decimal(item['unit_cost'])
-            instance.total_amount = total
+            for k, v in validated_data.items():
+                setattr(instance, k, v)
 
-        instance.save()
+            if items_data is not None:
+                instance.items.all().delete()
+                total = Decimal('0')
+                for item in items_data:
+                    PurchaseItem.objects.create(purchase=instance, **item)
+                    total += Decimal(item['quantity']) * Decimal(item['unit_cost'])
+                instance.total_amount = total
 
-        # If status just flipped to 'received', apply to inventory
-        if old_status != 'received' and instance.status == 'received':
-            self._apply_to_inventory(instance)
+            instance.save()
+
+            # If status just flipped to 'received', apply to inventory
+            if old_status != 'received' and instance.status == 'received':
+                self._apply_to_inventory(instance)
 
         return instance
 
@@ -83,19 +91,19 @@ class PurchaseSerializer(serializers.ModelSerializer):
         """Add stock, record stock movements, and update product tracking fields."""
         for item in purchase.items.all():
             product = item.product
-            product.quantity += item.quantity
 
-            # Copy pharmacy/grocery tracking fields into the product
-            if item.batch_number:
-                product.batch_number = item.batch_number
-            if item.expiry_date:
-                product.expiry_date = item.expiry_date
-            if item.manufacturer:
-                product.manufacturer = item.manufacturer
-            if item.unit:
-                product.unit = item.unit
+            # Copy pharmacy/grocery tracking fields into the product.
+            # Save only those fields: `quantity` is changed by add_stock().
+            tracked = []
+            for field in ('batch_number', 'expiry_date', 'manufacturer', 'unit'):
+                value = getattr(item, field)
+                if value:
+                    setattr(product, field, value)
+                    tracked.append(field)
+            if tracked:
+                product.save(update_fields=tracked + ['updated_at'])
 
-            product.save()
+            add_stock(product, item.quantity)
 
             StockMovement.objects.create(
                 product=product,

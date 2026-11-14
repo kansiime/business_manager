@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from .models import Return, ReturnItem
 from apps.inventory.models import StockMovement
+from apps.inventory.stock import InsufficientStock, add_stock, remove_stock
 from apps.debts.models import Debt
 from apps.accounts.audit import log
 
@@ -51,8 +52,7 @@ class ReturnSerializer(serializers.ModelSerializer):
 
                 if r.return_type == 'sales':
                     # Customer returned goods → stock goes UP
-                    product.quantity += item['quantity']
-                    product.save()
+                    add_stock(product, item['quantity'])
                     StockMovement.objects.create(
                         product=product, movement_type='in',
                         quantity=item['quantity'],
@@ -62,8 +62,10 @@ class ReturnSerializer(serializers.ModelSerializer):
                     )
                 else:
                     # We return goods to supplier → stock goes DOWN
-                    product.quantity -= item['quantity']
-                    product.save()
+                    try:
+                        remove_stock(product, item['quantity'])
+                    except InsufficientStock as e:
+                        raise serializers.ValidationError({'items': [str(e)]})
                     StockMovement.objects.create(
                         product=product, movement_type='out',
                         quantity=item['quantity'],

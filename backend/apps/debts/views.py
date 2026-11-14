@@ -10,9 +10,10 @@ from .models import Debt, DebtPayment
 from .serializers import DebtSerializer, RecordPaymentSerializer
 from apps.accounts.permissions import RoleBasedPermission
 from apps.accounts.audit import log
+from apps.tenants.mixins import TenantScopedMixin
 
 
-class DebtViewSet(viewsets.ModelViewSet):
+class DebtViewSet(TenantScopedMixin, viewsets.ModelViewSet):
     queryset = Debt.objects.all().order_by('-id')
     serializer_class = DebtSerializer
     permission_classes = [IsAuthenticated, RoleBasedPermission]
@@ -20,7 +21,7 @@ class DebtViewSet(viewsets.ModelViewSet):
     write_roles = ['admin', 'manager']
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        self.save_with_tenant(serializer, user=self.request.user)
 
     @action(detail=True, methods=['post'])
     def record_payment(self, request, pk=None):
@@ -29,6 +30,9 @@ class DebtViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         amount = serializer.validated_data['amount']
         with transaction.atomic():
+            # Lock and re-read the debt so two payments recorded at the
+            # same moment both count.
+            debt = Debt.all_objects.select_for_update().get(pk=debt.pk)
             DebtPayment.objects.create(
                 debt=debt, amount=amount,
                 notes=serializer.validated_data.get('notes', ''),
