@@ -45,10 +45,21 @@ class SaleItem(models.Model):
     quantity = models.IntegerField()
     unit_price = models.DecimalField(max_digits=14, decimal_places=2)
     cost_price = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    # The product's normal selling price when it was sold, so a bargained
+    # price can be shown as a discount later. Null on sales made before
+    # this was recorded.
+    list_price = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
 
     @property
     def subtotal(self):
         return self.quantity * self.unit_price
+
+    @property
+    def discount(self):
+        """Total amount knocked off the normal price for this line (never negative)."""
+        if self.list_price is None or self.unit_price >= self.list_price:
+            return 0
+        return self.quantity * (self.list_price - self.unit_price)
 
     @property
     def profit(self):

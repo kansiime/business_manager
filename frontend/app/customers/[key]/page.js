@@ -239,7 +239,7 @@ export default function CustomerDetailPage() {
                   <tr key={sale.id}>
                     <td className="text-sm text-slate-600 whitespace-nowrap">{sale.date}</td>
                     <td className="font-mono text-xs">{sale.reference}</td>
-                    <td className="capitalize">{sale.payment_type}</td>
+                    <td className="capitalize">{(sale.payment_type || "").replace(/_/g, " ")}</td>
                     <td className="text-right font-medium">{money(sale.total)}</td>
                     <td className="text-right">{money(sale.paid)}</td>
                     <td className={`text-right ${sale.balance > 0 ? 'text-red-600 font-semibold' : 'text-slate-400'}`}>

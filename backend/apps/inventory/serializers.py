@@ -20,6 +20,9 @@ class SupplierSerializer(serializers.ModelSerializer):
 class ProductSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
     supplier_name = serializers.CharField(source='supplier.name', read_only=True)
+    # Negative once expired; None when the product has no expiry date.
+    days_to_expiry = serializers.IntegerField(read_only=True)
+    is_expired = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Product

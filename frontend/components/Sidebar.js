@@ -267,13 +267,13 @@ export default function Sidebar() {
         </div>
 
         {/* Nav links */}
-        <nav className="flex-1 overflow-y-auto py-3 overscroll-contain">
+        <nav className="flex-1 min-h-0 overflow-y-auto py-2 overscroll-contain">
           {!ready && (
             <p className="px-4 py-2 text-xs text-slate-400">Loading menu…</p>
           )}
           {sections.map((s) => (
-            <div key={s.section} className="mb-2">
-              <p className="px-4 pt-3 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+            <div key={s.section} className="mb-1">
+              <p className="px-5 pt-3 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                 {s.section}
               </p>
               {s.links.map((l) => {
@@ -284,10 +284,10 @@ export default function Sidebar() {
                     key={l.href}
                     href={l.href}
                     onClick={() => setOpen(false)}
-                    className={`mx-2 my-0.5 px-3 py-2.5 rounded-lg flex items-center gap-3 text-sm font-medium transition-colors ${
+                    className={`relative mx-2 my-px px-3 py-2 rounded-lg flex items-center gap-3 text-sm font-medium transition-colors ${
                       active
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-700 hover:bg-slate-100'
+                        ? 'bg-blue-50 text-blue-700 font-semibold before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:rounded-full before:bg-blue-600'
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                     }`}
                   >
                     <span className="text-base flex-shrink-0">{l.icon}</span>
@@ -305,23 +305,23 @@ export default function Sidebar() {
         </nav>
 
         {/* User footer */}
-        <div className="border-t border-slate-200 p-3 flex-shrink-0">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
-              {user?.username?.[0]?.toUpperCase() || '?'}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-slate-900 truncate">
-                {user?.username || 'User'}
-              </p>
-              <p className="text-[10px] text-slate-500 capitalize">{user?.role}</p>
-            </div>
+        <div className="border-t border-slate-200 p-3 flex-shrink-0 flex items-center gap-2.5">
+          <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+            {(user?.first_name || user?.username || '?')[0].toUpperCase()}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-slate-900 truncate">
+              {[user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.username || 'User'}
+            </p>
+            <p className="text-[11px] text-slate-500 capitalize truncate">{user?.role}</p>
           </div>
           <button
             onClick={logout}
-            className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg font-medium"
+            title="Sign out"
+            aria-label="Sign out"
+            className="shrink-0 px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
           >
-            🚪 Logout
+            Sign out
           </button>
         </div>
       </aside>

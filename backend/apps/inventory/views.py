@@ -30,7 +30,7 @@ class SupplierViewSet(TenantScopedMixin, viewsets.ModelViewSet):
 
 
 class ProductViewSet(TenantScopedMixin, viewsets.ModelViewSet):
-    queryset = Product.objects.all().order_by('-id')
+    queryset = Product.objects.select_related('category', 'supplier').order_by('-id')
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticated, RoleBasedPermission]
     allowed_roles = [
@@ -53,7 +53,7 @@ class ProductViewSet(TenantScopedMixin, viewsets.ModelViewSet):
 
 
 class StockMovementViewSet(TenantScopedMixin, viewsets.ModelViewSet):
-    queryset = StockMovement.objects.all().order_by('-id')
+    queryset = StockMovement.objects.select_related('product', 'user').order_by('-id')
     serializer_class = StockMovementSerializer
     permission_classes = [IsAuthenticated, RoleBasedPermission]
     allowed_roles = ['admin', 'manager', 'storekeeper']
@@ -93,7 +93,7 @@ class StockMovementViewSet(TenantScopedMixin, viewsets.ModelViewSet):
 
 
 class StockReconciliationViewSet(TenantScopedMixin, viewsets.ModelViewSet):
-    queryset = StockReconciliation.objects.all().order_by('-id')
+    queryset = StockReconciliation.objects.select_related('product', 'user').order_by('-id')
     serializer_class = StockReconciliationSerializer
     permission_classes = [IsAuthenticated, RoleBasedPermission]
     allowed_roles = ['admin', 'manager', 'storekeeper']

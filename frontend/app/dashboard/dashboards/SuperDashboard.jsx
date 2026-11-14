@@ -4,7 +4,6 @@ import Link from 'next/link';
 import api from '@/lib/api';
 import { formatMoney } from '@/lib/format';
 import { DashboardShell, Section } from '../widgets/Shell';
-import HeroKpi from '../widgets/HeroKpi';
 import KpiRow from '../widgets/KpiRow';
 import DataTable from '../widgets/DataTable';
 import QuickActions from '../widgets/QuickActions';
@@ -45,15 +44,6 @@ export default function SuperDashboard() {
     >
       <PendingPaymentClaims />
       <RecentPayments />
-
-      <Section>
-        <HeroKpi
-          label="Total businesses"
-          value={data.tenants.total}
-          hint={`${data.tenants.active} active · ${data.tenants.trial} on trial`}
-          accent="blue"
-        />
-      </Section>
 
       <Section label="Businesses">
         <KpiRow

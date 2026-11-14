@@ -174,6 +174,19 @@ def dashboard_summary(request):
         Product.objects.filter(low).values('id', 'name', 'sku', 'quantity', 'reorder_level')[:10]
     )
 
+    # Stock still on hand that has expired or expires within 30 days.
+    def expiry_rows(qs):
+        return [
+            {**row, 'days_left': (row['expiry_date'] - today).days}
+            for row in qs.values('id', 'name', 'quantity', 'unit', 'expiry_date')[:10]
+        ]
+    in_stock = Product.objects.filter(quantity__gt=0, expiry_date__isnull=False)
+    expired_items = expiry_rows(in_stock.filter(expiry_date__lt=today).order_by('expiry_date'))
+    expiring_soon = expiry_rows(
+        in_stock.filter(expiry_date__gte=today, expiry_date__lte=today + timedelta(days=30))
+        .order_by('expiry_date')
+    )
+
     shop = GarageSettings.load()
 
     today_sales = {
@@ -219,6 +232,8 @@ def dashboard_summary(request):
         'stock_value': float(stock['value']),
         'low_stock': stock['low_count'],
         'low_stock_items': low_stock_items,
+        'expired_items': expired_items,
+        'expiring_soon': expiring_soon,
         'currency': shop.currency_symbol or shop.currency_code or 'UGX',
         'business_name': shop.name,
     })

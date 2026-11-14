@@ -240,14 +240,6 @@ export default function InventoryPage() {
   useEffect(() => { setPage(1); }, [search, pageSize]);
   const goTo = (p) => setPage(Math.max(1, Math.min(totalPages, p)));
 
-  const expiryClass = (p) => {
-    const days = p.days_to_expiry;
-    if (days === null || days === undefined) return '';
-    if (days < 0) return 'text-red-600 font-bold';
-    if (days <= 30) return 'text-amber-600 font-semibold';
-    return 'text-slate-500';
-  };
-
   // Which unit options to show: pharmacy wins if both flags set.
   const unitOptions = isDrugshop ? UNITS_PHARMACY : (isAgro ? UNITS_AGRO : []);
 
@@ -507,12 +499,14 @@ export default function InventoryPage() {
                     <td className="text-xs text-slate-600">{p.batch_number || '—'}</td>
                   )}
                   {needsExpiry && (
-                    <td className={`text-sm whitespace-nowrap ${expiryClass(p)}`}>
-                      {p.expiry_date || '—'}
+                    <td className="text-sm whitespace-nowrap">
+                      <span className="text-slate-700">{p.expiry_date || '—'}</span>
                       {p.days_to_expiry !== null && p.days_to_expiry !== undefined && (
-                        <span className="text-xs ml-1">
-                          ({p.days_to_expiry < 0 ? 'expired' : `${p.days_to_expiry}d`})
-                        </span>
+                        p.days_to_expiry < 0 ? (
+                          <span className="ml-2 badge badge-red">Expired</span>
+                        ) : p.days_to_expiry <= 30 ? (
+                          <span className="ml-2 badge badge-amber normal-case">{p.days_to_expiry}d left</span>
+                        ) : null
                       )}
                     </td>
                   )}
@@ -524,14 +518,21 @@ export default function InventoryPage() {
                     {low && <span className="ml-2 badge badge-red">Low</span>}
                   </td>
                   {canManage && (
-                    <td className="text-right">{formatMoney(p.cost_price, currency)}</td>
+                    <td className="text-right whitespace-nowrap tabular-nums">{formatMoney(p.cost_price, currency)}</td>
                   )}
-                  <td className="text-right">{formatMoney(p.selling_price, currency)}</td>
+                  <td className="text-right whitespace-nowrap tabular-nums">{formatMoney(p.selling_price, currency)}</td>
                   {canManage && (
                     <td className="text-right whitespace-nowrap">
                       <button className="btn btn-success btn-sm mr-1" onClick={() => openStockModal(p, 'in')}>+ Stock</button>
                       <button className="btn btn-secondary btn-sm mr-1" onClick={() => edit(p)}>Edit</button>
-                      <button className="btn btn-danger btn-sm" onClick={() => del(p.id)}>Del</button>
+                      <button
+                        className="btn btn-secondary btn-sm text-red-600 hover:!bg-red-50 hover:!border-red-300"
+                        onClick={() => del(p.id)}
+                        title={`Delete ${p.name}`}
+                        aria-label={`Delete ${p.name}`}
+                      >
+                        🗑
+                      </button>
                     </td>
                   )}
                 </tr>

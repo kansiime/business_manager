@@ -15,6 +15,7 @@ export default function BusinessSettingsPage() {
     currency_code: 'UGX',
     currency_symbol: 'UGX',
     receipt_footer: '',
+    max_discount_percent: 10,
     whatsapp_template_debt: '',
     whatsapp_template_promise_today: '',
     whatsapp_template_receipt: '',
@@ -45,6 +46,7 @@ export default function BusinessSettingsPage() {
           currency_code: r.currency_code || 'UGX',
           currency_symbol: r.currency_symbol || 'UGX',
           receipt_footer: r.receipt_footer || '',
+          max_discount_percent: r.max_discount_percent ?? 10,
           whatsapp_template_debt: r.whatsapp_template_debt || '',
           whatsapp_template_promise_today: r.whatsapp_template_promise_today || '',
           whatsapp_template_receipt: r.whatsapp_template_receipt || '',
@@ -179,8 +181,8 @@ export default function BusinessSettingsPage() {
                   return (
                     <div className="mt-4 p-3 rounded-lg bg-red-50 border border-red-200">
                       <p className="text-sm font-semibold text-red-800">
-                        ⏰ Your plan expired {Math.abs(days)} day{Math.abs(days) !== 1 && 's'} ago.
-                        Contact support to renew.
+                        ⏰ Your plan expired {Math.abs(days)} day{Math.abs(days) !== 1 && 's'} ago.{' '}
+                        <a href="/subscription" className="underline">Renew now</a>
                       </p>
                     </div>
                   );
@@ -190,7 +192,7 @@ export default function BusinessSettingsPage() {
                     <div className="mt-4 p-3 rounded-lg bg-amber-50 border border-amber-200">
                       <p className="text-sm font-semibold text-amber-800">
                         ⚠️ Only {days} day{days !== 1 && 's'} left on your {form._plan.is_trial ? 'trial' : 'plan'}.
-                        Renew soon to avoid losing access.
+                        <a href="/subscription" className="underline">Renew now</a> to keep working without interruption.
                       </p>
                     </div>
                   );
@@ -204,11 +206,16 @@ export default function BusinessSettingsPage() {
                 );
               })()}
 
-              <p className="text-xs text-slate-400 mt-3">
-                To change your plan or renew, contact support
-                {form._support_email && ` at ${form._support_email}`}
-                {form._support_phone && ` or ${form._support_phone}`}.
-              </p>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-slate-400">
+                  Questions about billing? Contact support
+                  {form._support_email && ` at ${form._support_email}`}
+                  {form._support_phone && ` or ${form._support_phone}`}.
+                </p>
+                <a href="/subscription" className="btn btn-secondary btn-sm">
+                  {form._plan.is_trial ? 'Choose a plan' : 'Manage subscription'} →
+                </a>
+              </div>
             </div>
           )}
 
@@ -224,6 +231,34 @@ export default function BusinessSettingsPage() {
               {field('currency_code', 'Currency Code (e.g. UGX, KES, USD)')}
               {field('currency_symbol', 'Currency Symbol (shown on reports)')}
               {field('receipt_footer', 'Receipt Footer', { textarea: true, full: true })}
+            </div>
+          </div>
+
+          {/* Pricing & discounts */}
+          <div className="card">
+            <p className="card-title">Pricing &amp; discounts</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+              <div>
+                <label htmlFor="max_discount_percent">Max discount for cashiers &amp; other staff</label>
+                <div className="relative">
+                  <input
+                    id="max_discount_percent"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    value={form.max_discount_percent}
+                    onChange={(e) => setForm({ ...form, max_discount_percent: e.target.value })}
+                    className="pr-10"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
+                </div>
+              </div>
+              <ul className="text-sm text-slate-500 space-y-1.5 md:pt-6">
+                <li>• Staff can lower an item&apos;s price by up to this much when a customer bargains. Set 0 to stop them giving discounts.</li>
+                <li>• Admins and managers can give any discount.</li>
+                <li>• Only admins and managers can sell below cost, and they must confirm it.</li>
+              </ul>
             </div>
           </div>
 

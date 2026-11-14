@@ -103,3 +103,24 @@ class DailyDigestTests(TestCase):
         html = mail.outbox[0].alternatives[0][0]
         self.assertNotIn('<script>', html)
         self.assertIn('&lt;script&gt;', html)
+
+
+class DashboardApiTests(TestCase):
+    def test_dashboard_lists_expired_and_expiring_stock(self):
+        client = make_business('Dash Pharmacy', 'dash', business_type='drugshop')
+        today = timezone.localtime().date()
+        make_product(client, sku='GONE', expiry_date=str(today - timedelta(days=3)))
+        make_product(client, sku='SOON', expiry_date=str(today + timedelta(days=4)))
+        make_product(client, sku='FAR', expiry_date=str(today + timedelta(days=90)))
+        make_product(client, sku='EMPTY', quantity=0, expiry_date=str(today - timedelta(days=1)))
+        data = client.get('/api/reports/dashboard/').data
+        self.assertEqual([p['name'] for p in data['expired_items']], ['Product GONE'])
+        self.assertEqual(data['expired_items'][0]['days_left'], -3)
+        self.assertEqual([p['name'] for p in data['expiring_soon']], ['Product SOON'])
+
+    def test_trial_days_agree_between_banner_and_settings(self):
+        client = make_business('Days Shop', 'days')
+        ctx = client.get('/api/tenants/context/').data['plan_status']['days_remaining']
+        settings_days = client.get('/api/auth/settings/').data['plan_info']['trial_days_remaining']
+        self.assertEqual(ctx, settings_days)
+        self.assertEqual(ctx, 14)

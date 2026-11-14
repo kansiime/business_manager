@@ -5,6 +5,26 @@ import api from '@/lib/api';
 import { useToast } from '@/components/Toast';
 import { formatMoney } from '@/lib/format';
 
+const PLATFORM_FEATURES = [
+  { key: 'whatsapp', icon: '💬', label: 'WhatsApp', hint: 'Debt reminders and receipts by WhatsApp.' },
+  { key: 'sms', icon: '📱', label: 'SMS', hint: 'Text-message notifications to customers.' },
+  { key: 'email_receipts', icon: '🧾', label: 'Email receipts', hint: 'Let businesses email receipts to customers.' },
+  { key: 'barcode_scanning', icon: '🏷️', label: 'Barcode scanning', hint: 'Scan products at the till and in stock.' },
+];
+
+/** A titled group of fields in a settings card. */
+function SettingsSection({ title, hint, className = '', children }) {
+  return (
+    <div className={`grid grid-cols-1 lg:grid-cols-3 gap-x-8 gap-y-4 ${className}`}>
+      <div>
+        <p className="font-semibold text-slate-900">{title}</p>
+        {hint && <p className="text-sm text-slate-500 mt-1">{hint}</p>}
+      </div>
+      <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">{children}</div>
+    </div>
+  );
+}
+
 export default function PlatformSettingsPage() {
   const toast = useToast();
 
@@ -159,85 +179,116 @@ export default function PlatformSettingsPage() {
       {/* -------- General -------- */}
       {activeTab === 'general' && (
         <form onSubmit={save} className="card">
-          <p className="card-title">General Platform Settings</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <SettingsSection
+            title="New businesses"
+            hint="Applied when someone signs up or you add a business."
+          >
             <div>
-              <label>Default Trial Length (days)</label>
-              <input
-                type="number"
-                min="0"
-                value={settings.default_trial_days}
-                onChange={(e) =>
-                  setSettings({ ...settings, default_trial_days: parseInt(e.target.value) })
-                }
-              />
+              <label htmlFor="trial_days">Free trial length</label>
+              <div className="relative">
+                <input
+                  id="trial_days"
+                  type="number"
+                  min="0"
+                  value={settings.default_trial_days}
+                  onChange={(e) =>
+                    setSettings({ ...settings, default_trial_days: parseInt(e.target.value || '0', 10) })
+                  }
+                  className="pr-14"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">days</span>
+              </div>
             </div>
             <div>
-              <label>Default Currency</label>
+              <label htmlFor="currency">Default currency</label>
               <input
+                id="currency"
                 value={settings.default_currency}
-                onChange={(e) => setSettings({ ...settings, default_currency: e.target.value })}
+                onChange={(e) => setSettings({ ...settings, default_currency: e.target.value.toUpperCase() })}
+                placeholder="UGX"
               />
             </div>
             <div>
-              <label>Default Country</label>
+              <label htmlFor="country">Default country</label>
               <input
+                id="country"
                 value={settings.default_country}
                 onChange={(e) => setSettings({ ...settings, default_country: e.target.value })}
               />
             </div>
+          </SettingsSection>
+
+          <SettingsSection
+            title="Support contact"
+            hint="Shown to businesses, and where payment-claim and new-business alerts are emailed."
+            className="card-section"
+          >
             <div>
-              <label>Support Email</label>
+              <label htmlFor="support_email">Support email</label>
               <input
+                id="support_email"
                 type="email"
                 value={settings.support_email}
                 onChange={(e) => setSettings({ ...settings, support_email: e.target.value })}
+                placeholder="support@yourcompany.com"
               />
             </div>
             <div>
-              <label>Support Phone</label>
+              <label htmlFor="support_phone">Support phone</label>
               <input
+                id="support_phone"
+                type="tel"
                 value={settings.support_phone}
                 onChange={(e) => setSettings({ ...settings, support_phone: e.target.value })}
+                placeholder="07XX XXX XXX"
               />
+            </div>
+          </SettingsSection>
+
+          <div className="card-section">
+            <p className="card-title mb-1">Platform features</p>
+            <p className="text-sm text-slate-500 mb-4">Turn features on or off for every business.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {PLATFORM_FEATURES.map(({ key, icon, label, hint }) => {
+                const on = settings.platform_features?.[key] || false;
+                return (
+                  <label
+                    key={key}
+                    className={`justify-between rounded-xl border p-4 transition-colors ${
+                      on ? 'border-blue-200 bg-blue-50/50' : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <span className="flex items-start gap-3">
+                      <span className="text-xl leading-none mt-0.5">{icon}</span>
+                      <span>
+                        <span className="block font-semibold text-slate-900">{label}</span>
+                        <span className="block text-xs font-normal text-slate-500 mt-0.5">{hint}</span>
+                      </span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      className="switch"
+                      checked={on}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          platform_features: {
+                            ...(settings.platform_features || {}),
+                            [key]: e.target.checked,
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                );
+              })}
             </div>
           </div>
 
-          {/* Global feature switches */}
-          <p className="card-title mt-8">Global Feature Switches</p>
-          <p className="text-sm text-slate-500 mb-3">
-            Turn features on or off for the entire platform.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {['whatsapp', 'sms', 'email_receipts', 'barcode_scanning'].map((key) => (
-              <label
-                key={key}
-                className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  checked={settings.platform_features?.[key] || false}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      platform_features: {
-                        ...(settings.platform_features || {}),
-                        [key]: e.target.checked,
-                      },
-                    })
-                  }
-                  className="w-5 h-5"
-                />
-                <span className="text-sm font-medium capitalize">
-                  {key.replace('_', ' ')}
-                </span>
-              </label>
-            ))}
-          </div>
-
-          <div className="mt-6 flex justify-end">
+          <div className="mt-8 pt-5 border-t border-slate-100 flex items-center justify-end gap-3">
+            <span className="text-xs text-slate-400">Changes apply to every business.</span>
             <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? 'Saving…' : 'Save Settings'}
+              {saving ? 'Saving…' : 'Save settings'}
             </button>
           </div>
         </form>

@@ -13,11 +13,15 @@ import { openWhatsApp, renderTemplate, DEFAULT_TEMPLATES } from '@/lib/whatsapp'
 
 export default function SalesPage() {
   const toast = useToast();
-  const { enabled_features } = useTenantContext();
+  const { enabled_features, role } = useTenantContext();
+  // Admins and managers may give any discount and (after confirming) sell
+  // below cost; other staff are held to the business's discount limit.
+  const canOverridePrice = ['admin', 'manager', 'super'].includes(role);
   const isPharmacy = enabled_features.includes('batch_tracking') ||
                      enabled_features.includes('expiry');
 
   const [sales, setSales] = useState([]);
+  const [loaded, setLoaded] = useState(false);
   const [products, setProducts] = useState([]);
   const [settings, setSettings] = useState({});
   const [currency, setCurrency] = useState('UGX');
@@ -45,6 +49,7 @@ export default function SalesPage() {
     setProducts(p.data);
     setSettings(gs.data);
     setCurrency(gs.data.currency_symbol || 'UGX');
+    setLoaded(true);
   };
   useEffect(() => { load(); }, []);
 
@@ -67,6 +72,15 @@ export default function SalesPage() {
   const total = items.reduce(
     (s, i) => s + (i.quantity || 0) * (i.unit_price || 0), 0
   );
+
+  // How much below each product's normal price this sale is going.
+  const discountLimit = parseFloat(settings?.max_discount_percent ?? 10);
+  const totalDiscount = items.reduce((sum, i) => {
+    const p = products.find((x) => x.id === parseInt(i.product));
+    if (!p) return sum;
+    const off = parseFloat(p.selling_price) - (parseFloat(i.unit_price) || 0);
+    return off > 0 ? sum + off * (parseInt(i.quantity) || 0) : sum;
+  }, 0);
 
   useEffect(() => {
     if (form.payment_type === 'cash') {
@@ -114,23 +128,35 @@ export default function SalesPage() {
       setError(msg); toast.error(msg); return;
     }
 
+    const payload = {
+      ...form,
+      amount_paid: paid,
+      items: items.map((i) => ({
+        product: parseInt(i.product),
+        quantity: parseInt(i.quantity),
+        unit_price: parseFloat(i.unit_price),
+      })),
+    };
+
     setSaving(true);
     try {
-      await api.post('/sales/', {
-        ...form,
-        amount_paid: paid,
-        items: items.map((i) => ({
-          product: parseInt(i.product),
-          quantity: parseInt(i.quantity),
-          unit_price: parseFloat(i.unit_price),
-        })),
-      });
+      try {
+        await api.post('/sales/', payload);
+      } catch (err) {
+        const belowCost = err.response?.data?.below_cost;
+        if (!belowCost) throw err;
+        // A manager / admin selling below cost: confirm, then resend.
+        const ok = window.confirm(
+          `${belowCost.join('\n')}\n\nThis sale will make a loss. Sell below cost anyway?`
+        );
+        if (!ok) return;
+        await api.post('/sales/', { ...payload, allow_below_cost: true });
+      }
       toast.success(`Sale saved — ${money(total)}`);
       resetForm();
       load();
     } catch (err) {
-      const data = err.response?.data;
-      const msg = data?.detail || (typeof data === 'object' ? JSON.stringify(data) : 'Could not save sale.');
+      const msg = saleErrorMessage(err.response?.data);
       setError(msg); toast.error(msg);
     } finally {
       setSaving(false);
@@ -247,6 +273,12 @@ export default function SalesPage() {
             <button type="button" onClick={addItem} className="btn btn-secondary btn-sm">+ Add item</button>
           </div>
           <div className="space-y-3">
+            <div className="hidden md:grid grid-cols-12 gap-2 px-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+              <span className="col-span-5">Product</span>
+              <span className="col-span-2">Qty</span>
+              <span className="col-span-2">Unit price</span>
+              <span className="col-span-2 text-right">Subtotal</span>
+            </div>
             {items.map((it, i) => {
               const selected = products.find((p) => p.id === parseInt(it.product));
               const outOfStock = selected && it.quantity > selected.quantity;
@@ -293,6 +325,18 @@ export default function SalesPage() {
                         ⚠ Only {selected.quantity} in stock for {selected.name}.
                       </div>
                     )}
+                    {selected && (
+                      <PriceNote
+                        price={parseFloat(it.unit_price) || 0}
+                        normal={parseFloat(selected.selling_price) || 0}
+                        cost={parseFloat(selected.cost_price) || 0}
+                        quantity={parseInt(it.quantity) || 0}
+                        limit={discountLimit}
+                        canOverride={canOverridePrice}
+                        money={money}
+                        onReset={() => updateItem(i, 'unit_price', parseFloat(selected.selling_price))}
+                      />
+                    )}
                   </div>
                 </div>
               );
@@ -301,9 +345,22 @@ export default function SalesPage() {
         </div>
 
         <div className="mt-5 pt-4 border-t border-slate-100 flex flex-wrap justify-between items-center gap-3">
-          <div>
-            <p className="text-xs text-slate-500 uppercase font-semibold">Total</p>
-            <p className="text-2xl font-bold text-slate-900">{money(total)}</p>
+          <div className="flex items-end gap-6">
+            <div>
+              <p className="text-xs text-slate-500 uppercase font-semibold">Total</p>
+              <p className="text-2xl font-bold text-slate-900">{money(total)}</p>
+            </div>
+            {totalDiscount > 0 && (
+              <div className="pb-0.5">
+                <p className="text-xs text-slate-500 uppercase font-semibold">Discount given</p>
+                <p className="text-base font-semibold text-emerald-700">
+                  −{money(totalDiscount)}
+                  <span className="text-xs font-normal text-slate-500 ml-1.5">
+                    (normal price {money(total + totalDiscount)})
+                  </span>
+                </p>
+              </div>
+            )}
           </div>
           <div className="flex gap-2">
             <button type="button" className="btn btn-secondary" onClick={resetForm}>Clear</button>
@@ -350,9 +407,11 @@ export default function SalesPage() {
           <tbody>
             {pg.pageItems.length === 0 && (
               <tr><td colSpan={10} className="text-center text-slate-400 py-8">
-                {search || filterPayment !== 'all' || filterStatus !== 'all'
-                  ? 'No sales match your filters.'
-                  : 'No sales recorded yet.'}
+                {!loaded
+                  ? 'Loading sales…'
+                  : search || filterPayment !== 'all' || filterStatus !== 'all'
+                    ? 'No sales match your filters.'
+                    : 'No sales recorded yet.'}
               </td></tr>
             )}
             {pg.pageItems.map((s) => {
@@ -372,8 +431,15 @@ export default function SalesPage() {
                   <td className="font-mono text-xs">{s.reference}</td>
                   <td className="whitespace-nowrap">{new Date(s.created_at).toLocaleString()}</td>
                   <td>{s.customer_name || 'Walk-in'}</td>
-                  <td className="capitalize">{s.payment_type}</td>
-                  <td className="text-right font-medium">{money(s.total_amount)}</td>
+                  <td className="capitalize">{(s.payment_type || "").replace(/_/g, " ")}</td>
+                  <td className="text-right font-medium">
+                    {money(s.total_amount)}
+                    {s.total_discount > 0 && (
+                      <span className="block text-[11px] font-normal text-emerald-700">
+                        −{money(s.total_discount)} off
+                      </span>
+                    )}
+                  </td>
                   <td className="text-right">{money(s.amount_paid)}</td>
                   <td className={`text-right ${parseFloat(s.balance) > 0 ? 'text-red-600 font-semibold' : ''}`}>
                     {money(s.balance)}
@@ -408,5 +474,71 @@ export default function SalesPage() {
         startIndex={pg.startIndex} endIndex={pg.endIndex}
         totalItems={filtered.length} label="sales" />
     </ProtectedRoute>
+  );
+}
+
+/** Turn the API's validation errors into one readable message. */
+function saleErrorMessage(data) {
+  if (!data) return 'Could not save sale. Check your connection.';
+  if (typeof data === 'string') return 'Could not save sale.';
+  if (data.detail) return data.detail;
+  const lines = [];
+  for (const [field, value] of Object.entries(data)) {
+    const list = Array.isArray(value) ? value : [value];
+    for (const v of list) {
+      if (typeof v === 'string') lines.push(v);
+      else if (v && typeof v === 'object') lines.push(...Object.values(v).flat().map(String));
+      else lines.push(`${field}: ${v}`);
+    }
+  }
+  return lines.join(' ') || 'Could not save sale.';
+}
+
+/**
+ * Under a sale line: how the price compares with the product's normal price
+ * and cost, and whether this user is allowed to charge it.
+ */
+function PriceNote({ price, normal, cost, quantity, limit, canOverride, money, onReset }) {
+  if (!normal || price === normal) return null;
+  const reset = (
+    <button type="button" onClick={onReset} className="ml-2 underline hover:no-underline">
+      Use normal price
+    </button>
+  );
+
+  if (cost > 0 && price < cost) {
+    return (
+      <div className="col-span-12 text-xs rounded-md bg-red-50 text-red-700 px-2.5 py-1.5">
+        ⛔ {money(price)} is below cost ({money(cost)}): a loss of {money((cost - price) * quantity)}.
+        {canOverride ? ' You will be asked to confirm.' : ' Only a manager or admin can sell below cost.'}
+        {reset}
+      </div>
+    );
+  }
+
+  if (price > normal) {
+    return (
+      <div className="col-span-12 text-xs text-slate-500">
+        Above the normal price of {money(normal)}.{reset}
+      </div>
+    );
+  }
+
+  const pct = ((normal - price) / normal) * 100;
+  const off = (normal - price) * quantity;
+  if (!canOverride && pct > limit + 0.005) {
+    return (
+      <div className="col-span-12 text-xs rounded-md bg-amber-50 text-amber-800 px-2.5 py-1.5">
+        ⚠ {pct.toFixed(0)}% off is more than your {limit.toFixed(0)}% discount limit. The lowest you can
+        charge is {money(normal * (1 - limit / 100))}. Ask a manager or admin for a bigger discount.
+        {reset}
+      </div>
+    );
+  }
+  return (
+    <div className="col-span-12 text-xs text-emerald-700">
+      🏷️ Normal price {money(normal)} · {pct.toFixed(pct < 10 ? 1 : 0)}% off ({money(off)} discount)
+      {reset}
+    </div>
   );
 }

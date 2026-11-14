@@ -18,6 +18,17 @@ from .serializers import (
 from .permissions import IsSuperAdmin
 
 
+def days_until(dt):
+    """
+    Calendar days from today until `dt` in local (Kampala) time: 0 on the
+    last day, negative once past, None if there's no date. The banner, the
+    settings page and the reminder emails all count days this way.
+    """
+    if dt is None:
+        return None
+    return (timezone.localtime(dt).date() - timezone.localtime().date()).days
+
+
 # ---------------------------------------------------------------------------
 # Business types (public read)
 # ---------------------------------------------------------------------------
@@ -258,15 +269,8 @@ def build_context(user):
         return {**shell, 'is_super': False, 'tenant': None, 'enabled_features': [],
                 'announcement': announcement, 'plan_status': None}
 
-    today = timezone.localtime().date()
-
-    trial_days = None
-    if tenant.trial_ends_at:
-        trial_days = (tenant.trial_ends_at.date() - today).days
-
-    sub_days = None
-    if tenant.subscription_ends_at:
-        sub_days = (tenant.subscription_ends_at.date() - today).days
+    trial_days = days_until(tenant.trial_ends_at)
+    sub_days = days_until(tenant.subscription_ends_at)
 
     days_remaining = trial_days if tenant.plan == 'trial' else sub_days
 

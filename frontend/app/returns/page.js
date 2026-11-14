@@ -163,6 +163,12 @@ export default function ReturnsPage() {
             <button type="button" onClick={addItem} className="btn btn-secondary btn-sm">+ Add item</button>
           </div>
           <div className="space-y-2">
+            <div className="hidden md:grid grid-cols-12 gap-2 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+              <span className="col-span-5">Product</span>
+              <span className="col-span-2">Qty</span>
+              <span className="col-span-2">Unit price</span>
+              <span className="col-span-2 text-right">Subtotal</span>
+            </div>
             {items.map((it, i) => (
               <div key={i} className="grid grid-cols-12 gap-2 items-end">
                 <div className="col-span-12 md:col-span-5"><label className="md:hidden">Product</label>

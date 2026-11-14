@@ -305,16 +305,10 @@ def garage_settings(request):
         if tenant:
             from apps.billing.models import Subscription
 
-            now = timezone.now()
+            from apps.tenants.views import days_until
             sub = Subscription.objects.filter(tenant=tenant).first()
-
-            trial_days = None
-            if tenant.trial_ends_at:
-                trial_days = (tenant.trial_ends_at - now).days
-
-            sub_days = None
-            if tenant.subscription_ends_at:
-                sub_days = (tenant.subscription_ends_at - now).days
+            trial_days = days_until(tenant.trial_ends_at)
+            sub_days = days_until(tenant.subscription_ends_at)
 
             data['plan_info'] = {
                 'plan': tenant.plan,

@@ -12,10 +12,12 @@ import DataTable from '../widgets/DataTable';
 import QuickActions from '../widgets/QuickActions';
 
 export default function AdminDashboard() {
-  const { pages } = useTenantContext();
+  const { pages, enabled_features: features = [] } = useTenantContext();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const has = (k) => pages.includes(k);
+  // A page the user can open, or a feature the business has (e.g. expiry,
+  // which has no page of its own).
+  const has = (k) => pages.includes(k) || features.includes(k);
 
   useEffect(() => {
     api.get('/reports/dashboard/')
@@ -89,11 +91,14 @@ export default function AdminDashboard() {
         />
       </Section>
 
-      {/* 2. KPI row */}
-      <Section label="Performance">
+      {/* 2. KPI row (today's sales are already the hero, so not repeated) */}
+      <Section label="Today">
         <KpiRow
+          columns={heroLabel === 'Sales today' ? 3 : 4}
           items={[
-            { label: 'Sales (today)',    value: money(data.today.total),         accent: 'blue',   hint: `${data.today.count} transactions` },
+            ...(heroLabel === 'Sales today' ? [] : [
+              { label: 'Sales (today)', value: money(data.today.total), accent: 'blue', hint: `${data.today.count} transactions` },
+            ]),
             { label: 'Gross profit',     value: money(data.today.profit),        accent: 'green' },
             { label: 'Expenses',         value: money(data.expenses_today || 0), accent: 'amber' },
             { label: 'Net profit',       value: money(data.net_profit_today || 0), accent: (data.net_profit_today || 0) >= 0 ? 'green' : 'red' },
@@ -109,12 +114,18 @@ export default function AdminDashboard() {
               <AlertList
                 icon="⏰"
                 color="amber"
-                title="Expiring soon (30 days)"
-                items={(data.expiring_soon || []).map((p) => ({
-                  label: p.name,
-                  badge: `${p.days_left}d · ${p.quantity} ${p.unit || ''}`,
-                }))}
-                emptyText="Nothing expiring in the next 30 days."
+                title="Expired & expiring (30 days)"
+                items={[
+                  ...(data.expired_items || []).map((p) => ({
+                    label: p.name,
+                    badge: `Expired · ${p.quantity} ${p.unit || 'left'}`,
+                  })),
+                  ...(data.expiring_soon || []).map((p) => ({
+                    label: p.name,
+                    badge: `${p.days_left === 0 ? 'Today' : `${p.days_left}d`} · ${p.quantity} ${p.unit || 'left'}`,
+                  })),
+                ].slice(0, 6)}
+                emptyText="Nothing expired or expiring in the next 30 days."
                 actionHref="/inventory"
               />
             )}

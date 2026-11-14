@@ -69,6 +69,9 @@ class GarageSettings(TenantModel):
     currency_code = models.CharField(max_length=10, default='UGX')
     currency_symbol = models.CharField(max_length=10, default='UGX')
     receipt_footer = models.TextField(blank=True, default='Thank you for your business!')
+    # Largest discount (% off the normal price) staff other than admins and
+    # managers may give on a sale item. Admins and managers have no limit.
+    max_discount_percent = models.DecimalField(max_digits=5, decimal_places=2, default=10)
     logo = models.ImageField(upload_to='logos/', blank=True, null=True)
 
     # WhatsApp templates

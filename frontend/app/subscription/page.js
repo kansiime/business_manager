@@ -29,6 +29,13 @@ function fmtDate(iso) {
   return iso ? new Date(iso).toLocaleDateString() : '—';
 }
 
+/** "Up to 10 users", "1 branch", or "Unlimited users" for the 999 sentinel. */
+function limit(n, one, many = `${one}s`) {
+  if (n >= 999) return `Unlimited ${many}`;
+  if (n === 1) return `1 ${one}`;
+  return `Up to ${n} ${many}`;
+}
+
 export default function SubscriptionPage() {
   const toast = useToast();
   const { refresh: refreshContext } = useTenantContext();
@@ -118,7 +125,7 @@ export default function SubscriptionPage() {
           </span>
         </div>
         <p className={`text-sm mt-2 ${data.is_expired ? 'text-red-700' : 'text-slate-600'}`}>{statusLine}</p>
-        <p className="text-xs text-slate-500 mt-1">Up to {data.max_users} users.</p>
+        <p className="text-xs text-slate-500 mt-1">{limit(data.max_users, 'user')}.</p>
       </div>
 
       {data.payments.some((p) => p.provider === 'manual' && p.status === 'pending') && (
@@ -166,8 +173,8 @@ export default function SubscriptionPage() {
                 <span className="text-sm font-normal text-slate-500"> / {cycle === 'yearly' ? 'year' : 'month'}</span>
               </p>
               <ul className="text-sm text-slate-600 mt-3 space-y-1 flex-1">
-                <li>Up to {p.max_users} users</li>
-                <li>{p.max_branches} branch{p.max_branches === 1 ? '' : 'es'}</li>
+                <li>{limit(p.max_users, 'user')}</li>
+                <li>{limit(p.max_branches, 'branch', 'branches')}</li>
                 <li>All features for your business type</li>
               </ul>
               {data.can_pay && (

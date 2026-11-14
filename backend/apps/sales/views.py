@@ -23,7 +23,7 @@ from apps.debts.models import Debt
 
 
 class SaleViewSet(TenantScopedMixin, viewsets.ModelViewSet):
-    queryset = Sale.objects.all().order_by('-id')
+    queryset = Sale.objects.prefetch_related('items__product').order_by('-id')
     serializer_class = SaleSerializer
     permission_classes = [IsAuthenticated, RoleBasedPermission]
     allowed_roles = ['admin', 'manager', 'cashier', 'super']
@@ -164,8 +164,15 @@ class SaleViewSet(TenantScopedMixin, viewsets.ModelViewSet):
         elements.append(Spacer(1, 3 * mm))
 
         # Totals
-        totals = [
-            ['Subtotal', f"{sale.total_amount:,.0f}"],
+        discount = sum((it.discount for it in sale.items.all()), 0)
+        totals = []
+        if discount:
+            totals += [
+                ['Before discount', f"{sale.total_amount + discount:,.0f}"],
+                ['Discount', f"-{discount:,.0f}"],
+            ]
+        totals += [
+            ['Total' if discount else 'Subtotal', f"{sale.total_amount:,.0f}"],
             ['Paid', f"{sale.amount_paid:,.0f}"],
             ['Balance', f"{sale.balance:,.0f}"],
         ]

@@ -179,3 +179,41 @@ class OtherStockPathTests(TestCase):
         res = self._return('purchase', 11)
         self.assertEqual(res.status_code, 400, res.data)
         self.assertEqual(qty(self.pid), 10)
+
+
+class ApiShapeAndSpeedTests(TestCase):
+    def setUp(self):
+        self.client = make_business('Speed Shop', 'speedy')
+
+    def test_product_reports_days_to_expiry(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        today = timezone.localtime().date()
+        make_product(self.client, sku='OLD', expiry_date=str(today - timedelta(days=2)))
+        make_product(self.client, sku='NEW', expiry_date=str(today + timedelta(days=10)))
+        make_product(self.client, sku='NONE')
+        rows = {p['sku']: p for p in self.client.get('/api/inventory/products/').data}
+        self.assertEqual(rows['OLD']['days_to_expiry'], -2)
+        self.assertTrue(rows['OLD']['is_expired'])
+        self.assertEqual(rows['NEW']['days_to_expiry'], 10)
+        self.assertIsNone(rows['NONE']['days_to_expiry'])
+
+    def test_sales_list_query_count_does_not_grow_with_sales(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        pid = make_product(self.client, quantity=100)
+
+        def queries_for_list():
+            with CaptureQueriesContext(connection) as ctx:
+                res = self.client.get('/api/sales/')
+            self.assertEqual(res.status_code, 200)
+            return len(ctx.captured_queries), len(res.data)
+
+        for i in range(2):
+            sell(self.client, pid, 1, reference=f'A{i}')
+        few, n_few = queries_for_list()
+        for i in range(6):
+            sell(self.client, pid, 1, reference=f'B{i}')
+        many, n_many = queries_for_list()
+        self.assertEqual((n_few, n_many), (2, 8))
+        self.assertEqual(few, many)
