@@ -3,7 +3,7 @@ Create an MTN MoMo *sandbox* API user + key from your Collections
 subscription key, and print the settings to add to .env.
 
     MTN_MOMO_SUBSCRIPTION_KEY=<primary key> python manage.py momo_sandbox_setup \
-        --callback-host garage-backend.onrender.com
+        --callback-host business-manager-ghcy.onrender.com
 
 Production credentials come from MTN Uganda's partner portal instead.
 """
@@ -21,7 +21,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             '--callback-host', default='localhost',
-            help='Host MTN may send callbacks to (no scheme), e.g. garage-backend.onrender.com',
+            help='Host MTN may send callbacks to (no scheme), e.g. business-manager-ghcy.onrender.com',
         )
 
     def handle(self, *args, **options):

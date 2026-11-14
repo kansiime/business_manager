@@ -229,7 +229,7 @@ MTN_MOMO_BASE_URL = os.environ.get('MTN_MOMO_BASE_URL', 'https://sandbox.momodev
 # Empty = charge in the plan's currency
 MTN_MOMO_CURRENCY = os.environ.get('MTN_MOMO_CURRENCY', '')
 # Public URL MTN calls when a payment finishes, e.g.
-# https://garage-backend.onrender.com/api/billing/momo/callback  (host must
+# https://business-manager-ghcy.onrender.com/api/billing/momo/callback  (host must
 # match the API user's callback host). Empty = rely on status polling.
 MTN_MOMO_CALLBACK_URL = os.environ.get('MTN_MOMO_CALLBACK_URL', '')
 # MTN Uganda mobile prefixes (international format)
