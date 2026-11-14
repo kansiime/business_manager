@@ -80,3 +80,57 @@ class TenantIsolationTests(TestCase):
         self.assertEqual(
             Product.all_objects.get(pk=pid).tenant.name, 'Beta Agro')
 
+
+class BusinessTypeEditTests(TestCase):
+    def setUp(self):
+        from django.core.cache import cache
+        from rest_framework.test import APIClient
+        from apps.accounts.models import User
+        from .models import BusinessType
+
+        User.objects.create_user(username='root', password='rootpass1', role='super')
+        cache.clear()
+        token = APIClient().post('/api/auth/login/', {
+            'username': 'root', 'password': 'rootpass1'}, format='json').data['access']
+        self.super = APIClient()
+        self.super.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        self.type = BusinessType.objects.get(slug='hardware')
+        self.url = f'/api/tenants/business-types/{self.type.id}/'
+
+    def test_super_admin_can_edit(self):
+        res = self.super.patch(self.url, {
+            'name': 'Hardware & Building', 'icon': '🧱',
+            'features': ['sales', 'inventory', 'barcode', 'sales'],
+            'slug': 'changed',
+        }, format='json')
+        self.assertEqual(res.status_code, 200, res.data)
+        self.type.refresh_from_db()
+        self.assertEqual(self.type.name, 'Hardware & Building')
+        self.assertEqual(self.type.features, ['inventory', 'sales', 'barcode'])
+        self.assertEqual(self.type.slug, 'hardware')          # read-only
+
+    def test_unknown_feature_and_bad_plan_rejected(self):
+        self.assertEqual(self.super.patch(
+            self.url, {'features': ['sales', 'teleport']}, format='json').status_code, 400)
+        self.assertEqual(self.super.patch(
+            self.url, {'default_plan': 'suspended'}, format='json').status_code, 400)
+
+    def test_business_admin_and_anonymous_cannot_edit(self):
+        from rest_framework.test import APIClient
+        owner = make_business('Not Super', 'notsuper')
+        self.assertEqual(owner.patch(self.url, {'name': 'x'}, format='json').status_code, 403)
+        self.assertIn(APIClient().patch(self.url, {'name': 'x'}, format='json').status_code,
+                      (401, 403))
+
+    def test_hidden_type_leaves_signup_list_but_super_still_sees_it(self):
+        from rest_framework.test import APIClient
+        self.super.patch(self.url, {'is_active': False}, format='json')
+        public = [t['slug'] for t in APIClient().get('/api/tenants/business-types/').data]
+        self.assertNotIn('hardware', public)
+        admin = [t['slug'] for t in self.super.get('/api/tenants/business-types/').data]
+        self.assertIn('hardware', admin)
+
+    def test_feature_keys(self):
+        from .models import BusinessType
+        res = self.super.get('/api/tenants/business-types/feature-keys/')
+        self.assertEqual(res.data, BusinessType.ALL_FEATURE_KEYS)

@@ -8,8 +8,25 @@ class BusinessTypeSerializer(serializers.ModelSerializer):
         model = BusinessType
         fields = [
             'id', 'slug', 'name', 'description', 'icon',
-            'features', 'default_plan', 'order',
+            'features', 'default_plan', 'order', 'is_active',
         ]
+        # The slug is how sign-up and existing code refer to a type.
+        read_only_fields = ['id', 'slug']
+
+    def validate_features(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError('Send a list of feature keys.')
+        unknown = sorted(set(value) - set(BusinessType.ALL_FEATURE_KEYS))
+        if unknown:
+            raise serializers.ValidationError(f"Unknown feature(s): {', '.join(unknown)}")
+        # Keep the canonical order and drop duplicates.
+        return [k for k in BusinessType.ALL_FEATURE_KEYS if k in value]
+
+    def validate_default_plan(self, value):
+        allowed = {code for code, _ in Tenant.PLAN_CHOICES} - {'suspended'}
+        if value not in allowed:
+            raise serializers.ValidationError(f"Choose one of: {', '.join(sorted(allowed))}")
+        return value
 
 
 class TenantSerializer(serializers.ModelSerializer):

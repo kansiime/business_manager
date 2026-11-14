@@ -1,6 +1,5 @@
 'use client';
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import api from '@/lib/api';
 import { useToast } from '@/components/Toast';
@@ -16,18 +15,23 @@ export default function PlatformSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('general');
   const [editPlan, setEditPlan] = useState(null);
+  const [featureKeys, setFeatureKeys] = useState([]);
+  const [editType, setEditType] = useState(null);
+  const [savingType, setSavingType] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [s, p, b] = await Promise.all([
+      const [s, p, b, f] = await Promise.all([
         api.get('/tenants/platform-settings/'),
         api.get('/tenants/platform-plans/'),
         api.get('/tenants/business-types/'),
+        api.get('/tenants/business-types/feature-keys/'),
       ]);
       setSettings(s.data);
       setPlans(p.data);
       setBusinessTypes(b.data);
+      setFeatureKeys(f.data);
     } catch {
       toast.error('Could not load platform settings.');
     } finally {
@@ -47,6 +51,33 @@ export default function PlatformSettingsPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const saveType = async () => {
+    setSavingType(true);
+    try {
+      const { id, name, description, icon, features, default_plan, order, is_active } = editType;
+      await api.patch(`/tenants/business-types/${id}/`, {
+        name, description, icon, features, default_plan, order, is_active,
+      });
+      toast.success(`"${name}" updated`);
+      setEditType(null);
+      load();
+    } catch (err) {
+      const data = err?.response?.data;
+      const first = data && (data.detail || Object.values(data)[0]);
+      toast.error(Array.isArray(first) ? first[0] : first || 'Could not save business type.');
+    } finally {
+      setSavingType(false);
+    }
+  };
+
+  const toggleFeature = (key) => {
+    const has = editType.features.includes(key);
+    setEditType({
+      ...editType,
+      features: has ? editType.features.filter((k) => k !== key) : [...editType.features, key],
+    });
   };
 
   const savePlan = async () => {
@@ -277,7 +308,14 @@ export default function PlatformSettingsPage() {
                 {businessTypes.map((bt) => (
                   <tr key={bt.slug}>
                     <td className="text-2xl">{bt.icon}</td>
-                    <td className="font-medium">{bt.name}</td>
+                    <td className="font-medium">
+                      {bt.name}
+                      {bt.is_active === false && (
+                        <span className="ml-2 text-xs font-normal bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded">
+                          Hidden
+                        </span>
+                      )}
+                    </td>
                     <td>
                       <code className="text-xs bg-slate-100 px-1 rounded">{bt.slug}</code>
                     </td>
@@ -285,13 +323,13 @@ export default function PlatformSettingsPage() {
                       {(bt.features || []).join(', ') || '—'}
                     </td>
                     <td className="text-right">
-                      <Link
-                        href={`/admin/tenants/businesstype/${bt.id}/change/`}
-                        target="_blank"
+                      <button
+                        type="button"
+                        onClick={() => setEditType({ ...bt, features: [...(bt.features || [])] })}
                         className="btn btn-secondary btn-sm"
                       >
-                        Edit →
-                      </Link>
+                        Edit
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -299,7 +337,8 @@ export default function PlatformSettingsPage() {
             </table>
           </div>
           <p className="text-xs text-slate-400 mt-3">
-            Business types are edited in the Django admin. The link opens a new tab.
+            Changing a type&apos;s features changes them for every business of that type,
+            except where a business has its own feature overrides.
           </p>
         </div>
       )}
@@ -471,6 +510,112 @@ export default function PlatformSettingsPage() {
       )}
 
       {/* -------- Plan edit modal -------- */}
+      {editType && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-bold mb-1">Edit business type</h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Slug: <code className="bg-slate-100 px-1 rounded">{editType.slug}</code> (can&apos;t be changed)
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div className="md:col-span-3">
+                <label>Name</label>
+                <input
+                  value={editType.name}
+                  onChange={(e) => setEditType({ ...editType, name: e.target.value })}
+                />
+              </div>
+              <div>
+                <label>Icon (emoji)</label>
+                <input
+                  value={editType.icon}
+                  maxLength={20}
+                  onChange={(e) => setEditType({ ...editType, icon: e.target.value })}
+                />
+              </div>
+              <div className="md:col-span-4">
+                <label>Description</label>
+                <textarea
+                  rows={2}
+                  value={editType.description || ''}
+                  onChange={(e) => setEditType({ ...editType, description: e.target.value })}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label>Default plan for new businesses</label>
+                <select
+                  value={editType.default_plan}
+                  onChange={(e) => setEditType({ ...editType, default_plan: e.target.value })}
+                >
+                  <option value="trial">Free Trial</option>
+                  <option value="starter">Starter</option>
+                  <option value="growth">Growth</option>
+                  <option value="power">Power</option>
+                </select>
+              </div>
+              <div>
+                <label>Sort order</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={editType.order}
+                  onChange={(e) => setEditType({ ...editType, order: parseInt(e.target.value || '0', 10) })}
+                />
+              </div>
+              <div className="flex items-end pb-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="w-auto"
+                    checked={editType.is_active !== false}
+                    onChange={(e) => setEditType({ ...editType, is_active: e.target.checked })}
+                  />
+                  Show on sign-up
+                </label>
+              </div>
+            </div>
+
+            <p className="font-semibold text-sm mt-5 mb-2">
+              Features ({editType.features.length} of {featureKeys.length})
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {featureKeys.map((key) => (
+                <label
+                  key={key}
+                  className={`flex items-center gap-2 border rounded-lg px-3 py-2 cursor-pointer text-sm ${
+                    editType.features.includes(key)
+                      ? 'border-blue-500 bg-blue-50 text-blue-800'
+                      : 'border-slate-200 text-slate-600'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    className="w-auto"
+                    checked={editType.features.includes(key)}
+                    onChange={() => toggleFeature(key)}
+                  />
+                  {key.replace(/_/g, ' ')}
+                </label>
+              ))}
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6">
+              <button type="button" className="btn btn-secondary" onClick={() => setEditType(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={saveType}
+                disabled={savingType || !editType.name.trim()}
+              >
+                {savingType ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {editPlan && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">

@@ -3,7 +3,7 @@ from datetime import timedelta
 from django.db.models import Count, Sum
 from django.utils import timezone
 
-from rest_framework import viewsets, status
+from rest_framework import mixins, viewsets, status
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
@@ -21,10 +21,28 @@ from .permissions import IsSuperAdmin
 # ---------------------------------------------------------------------------
 # Business types (public read)
 # ---------------------------------------------------------------------------
-class BusinessTypeViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = BusinessType.objects.filter(is_active=True)
+class BusinessTypeViewSet(mixins.UpdateModelMixin, viewsets.ReadOnlyModelViewSet):
+    """
+    Anyone can list active business types (the sign-up form needs them).
+    The platform admin sees inactive ones too, and can edit any of them.
+    """
+    queryset = BusinessType.objects.all()
     serializer_class = BusinessTypeSerializer
-    permission_classes = [AllowAny]
+
+    def get_permissions(self):
+        if self.request.method in ('PUT', 'PATCH'):
+            return [IsSuperAdmin()]
+        return [AllowAny()]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if getattr(self.request.user, 'role', None) != 'super':
+            qs = qs.filter(is_active=True)
+        return qs
+
+    @action(detail=False, methods=['get'], url_path='feature-keys')
+    def feature_keys(self, request):
+        return Response(BusinessType.ALL_FEATURE_KEYS)
 
 
 # ---------------------------------------------------------------------------
