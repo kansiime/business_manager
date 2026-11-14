@@ -146,6 +146,8 @@ class TenantViewSet(viewsets.ModelViewSet):
         tenant.is_blocked = False
         tenant.save()
 
+        from . import emails
+        emails.plan_extended(tenant, days)
         return Response(TenantSerializer(tenant).data)
 
 
@@ -436,6 +438,7 @@ def bulk_tenant_action(request):
 
     qs = Tenant.objects.filter(id__in=ids)
     updated = qs.count()
+    affected = list(qs) if action_ != 'delete' else []
 
     if action_ == 'activate':
         qs.update(status='active', is_blocked=False)
@@ -448,6 +451,10 @@ def bulk_tenant_action(request):
     elif action_ == 'delete':
         for t in qs:
             t.delete()
+
+    from . import emails
+    for t in affected:
+        emails.account_status_changed(t, action_)
 
     return Response({'updated': updated, 'action': action_})
 

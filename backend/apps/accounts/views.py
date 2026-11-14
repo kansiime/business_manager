@@ -230,14 +230,22 @@ class UserViewSet(viewsets.ModelViewSet):
                     'Upgrade your plan to add more.'
                 ),
             })
-        serializer.save(tenant=tenant)
+        user = serializer.save(tenant=tenant)
+
+        from apps.tenants import emails
+        emails.staff_added(user, tenant, user.role, added_by=self.request.user)
 
     def perform_update(self, serializer):
+        password_changed = bool(serializer.validated_data.get('password'))
         if self.request.user.role == 'super':
-            serializer.save()
+            user = serializer.save()
         else:
             # Business admins can't move users to another business
-            serializer.save(tenant=self.request.user.tenant)
+            user = serializer.save(tenant=self.request.user.tenant)
+
+        if password_changed:
+            from apps.tenants import emails
+            emails.password_changed(user, by=self.request.user)
 
     def perform_destroy(self, instance):
         if instance == self.request.user:
@@ -454,3 +462,84 @@ def available_roles(request):
     is_clinic = 'prescriptions' in features or 'appointments' in features
 
     return Response(GENERIC_ROLES + (CLINIC_ROLES if is_clinic else []))
+
+
+# ---------------------------------------------------------------------------
+# Forgotten password
+# ---------------------------------------------------------------------------
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@throttle_classes([AuthRateThrottle])
+def password_reset_request(request):
+    """
+    Body: { "identifier": "<username or email>" }
+
+    Emails a one-time reset link to the matching account(s). Always answers
+    the same way, so the form can't be used to find out who has an account.
+    """
+    from django.conf import settings
+    from django.contrib.auth.tokens import default_token_generator
+    from django.utils.encoding import force_bytes
+    from django.utils.http import urlsafe_base64_encode
+    from django.db.models import Q
+    from apps.tenants import emails
+
+    identifier = (request.data.get('identifier') or '').strip()
+    if identifier:
+        users = User.objects.filter(
+            Q(username__iexact=identifier) | Q(email__iexact=identifier),
+            is_active=True,
+        ).exclude(email='')
+        hours = max(1, settings.PASSWORD_RESET_TIMEOUT // 3600)
+        for user in users:
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            token = default_token_generator.make_token(user)
+            link = (f"{settings.FRONTEND_URL.rstrip('/')}/reset-password"
+                    f"?uid={uid}&token={token}")
+            emails.password_reset(user, link, hours)
+
+    return Response({
+        'detail': 'If an account matches, we have emailed a link to reset the password. '
+                  'Check your inbox and spam folder.',
+    })
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+@throttle_classes([AuthRateThrottle])
+def password_reset_confirm(request):
+    """Body: { "uid", "token", "password" }. Sets the new password."""
+    from django.contrib.auth.password_validation import validate_password
+    from django.contrib.auth.tokens import default_token_generator
+    from django.core.exceptions import ValidationError as DjangoValidationError
+    from django.utils.encoding import force_str
+    from django.utils.http import urlsafe_base64_decode
+    from apps.tenants import emails
+
+    invalid = Response(
+        {'detail': 'This reset link is invalid or has expired. Ask for a new one.'},
+        status=400,
+    )
+    try:
+        pk = force_str(urlsafe_base64_decode(request.data.get('uid') or ''))
+        user = User.objects.get(pk=pk, is_active=True)
+    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        return invalid
+    if not default_token_generator.check_token(user, request.data.get('token') or ''):
+        return invalid
+
+    password = request.data.get('password') or ''
+    try:
+        validate_password(password, user)
+    except DjangoValidationError as e:
+        return Response({'password': list(e.messages)}, status=400)
+
+    # Changing the password also invalidates the token, so the link
+    # can't be used twice.
+    user.set_password(password)
+    user.save(update_fields=['password'])
+    log(request, 'update', 'User', user.id, f'{user.username} reset their password')
+    emails.password_changed(user)
+    return Response({'detail': 'Your password has been changed. You can now sign in.'})

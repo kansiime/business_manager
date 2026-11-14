@@ -471,10 +471,10 @@ def manual_claim_review(request, pk, decision):
         return Response({'detail': f'This payment is already {payment.status}.'}, status=400)
 
     if decision == 'confirm':
-        payment, _ = mark_payment_successful(payment.id)
+        # The business gets its receipt from mark_payment_successful.
+        payment, _ = mark_payment_successful(payment.id, notify_platform=False)
         Payment.objects.filter(pk=payment.pk).update(reviewed_by=request.user, reviewed_at=timezone.now())
         payment.refresh_from_db()
-        notifications.claim_confirmed(payment)
     elif decision == 'reject':
         reason = (request.data.get('reason') or '').strip()
         if not reason:
@@ -533,7 +533,7 @@ def manual_payment(request):
         note=reference,
         created_by=request.user,
     )
-    payment, _ = mark_payment_successful(payment.id)
+    payment, _ = mark_payment_successful(payment.id, notify_platform=False)
     return Response(payment_data(payment), status=201)
 
 

@@ -60,6 +60,7 @@ class Command(BaseCommand):
             plan=options['plan'],
             owner_email=options['owner_email'],
             owner_phone=options['owner_phone'],
+            notify_platform=False,
         )
         self.stdout.write(self.style.SUCCESS(f'✓ Tenant created: {tenant.name} [{tenant.slug}]'))
         self.stdout.write(self.style.SUCCESS(f'✓ Admin user created: {user.username}'))

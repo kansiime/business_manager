@@ -16,10 +16,14 @@ from .models import PlatformSetting, Tenant
 
 def provision_business(
     *, owner, name, business_type, plan='trial',
-    owner_name='', owner_email='', owner_phone='',
+    owner_name='', owner_email='', owner_phone='', notify_platform=True,
 ):
     """
     Create a tenant, make `owner` its admin, and create its business settings.
+
+    Once the transaction commits, the owner gets a welcome email and, unless
+    `notify_platform` is False (the platform admin created it themselves),
+    the platform admin is told about the new business.
 
     New businesses start on a free trial of `PlatformSetting.default_trial_days`
     (14 by default). Passing a paid plan code (super admin only) starts a
@@ -73,5 +77,12 @@ def provision_business(
                 currency_code=currency,
                 currency_symbol=currency,
             )
+
+        def notify():
+            from . import emails
+            emails.welcome(tenant, owner)
+            if notify_platform:
+                emails.new_business(tenant, owner)
+        transaction.on_commit(notify)
 
     return tenant

@@ -131,6 +131,9 @@ else:
 AUTH_USER_MODEL = 'accounts.User'
 
 # Enforced on self-service sign-up (SignupSerializer calls validate_password).
+# Forgotten-password links expire after 2 hours (and work only once).
+PASSWORD_RESET_TIMEOUT = 2 * 60 * 60
+
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',

@@ -5,7 +5,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 
 const api = axios.create({ baseURL: API_URL });
 
-const PUBLIC_PATHS = ['/login', '/signup'];
+const PUBLIC_PATHS = ['/login', '/signup', '/forgot-password', '/reset-password'];
 
 api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
@@ -76,6 +76,9 @@ export const auth = {
   businesses: () => api.get('/auth/businesses/'),
   createBusiness: (data) => api.post('/auth/businesses/', data),
   switchBusiness: (tenantId) => api.post('/auth/switch-business/', { tenant_id: tenantId }),
+  requestPasswordReset: (identifier) => api.post('/auth/password-reset/', { identifier }),
+  confirmPasswordReset: (uid, token, password) =>
+    api.post('/auth/password-reset/confirm/', { uid, token, password }),
 };
 
 export const billing = {

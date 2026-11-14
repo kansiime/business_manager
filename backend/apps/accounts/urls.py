@@ -13,6 +13,8 @@ from .views import (
     public_settings,
     available_roles,
     my_pages,
+    password_reset_request,
+    password_reset_confirm,
 )
 
 router = DefaultRouter()
@@ -25,6 +27,8 @@ urlpatterns = [
     path('businesses/', my_businesses),
     path('switch-business/', switch_business),
     path('refresh/', TokenRefreshView.as_view()),
+    path('password-reset/', password_reset_request),
+    path('password-reset/confirm/', password_reset_confirm),
     path('settings/', garage_settings),
     path('public-settings/', public_settings),
     path('roles/', available_roles),

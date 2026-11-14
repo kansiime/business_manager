@@ -124,6 +124,7 @@ class TenantCreateSerializer(serializers.Serializer):
                 owner_name=validated_data.get('owner_name', ''),
                 owner_email=validated_data.get('owner_email', ''),
                 owner_phone=validated_data.get('owner_phone', ''),
+                notify_platform=False,   # the platform admin is creating it
             )
 
 

@@ -183,6 +183,9 @@ export default function UsersPage() {
                 <label>Email</label>
                 <input type="email" value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })} />
+                <p className="text-xs text-slate-400 mt-1">
+                  We email their login details here, and they need it to reset a forgotten password.
+                </p>
               </div>
               <div>
                 <label>Phone</label>

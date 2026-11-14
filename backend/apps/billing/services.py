@@ -53,13 +53,31 @@ def activate_subscription(tenant, plan, cycle):
     return period_end
 
 
-def mark_payment_successful(payment_id, *, provider_tx_id='', paid_amount=None, paid_currency=None):
+def mark_payment_successful(payment_id, *, provider_tx_id='', paid_amount=None,
+                            paid_currency=None, notify_platform=True):
     """
     Idempotently confirm a payment and extend the subscription.
 
     Returns (payment, error). `error` is a message when the confirmation
     doesn't match what we charged, in which case nothing is activated.
+
+    The first time a payment is confirmed, the business gets a receipt and,
+    unless `notify_platform` is False (the platform admin confirmed or
+    recorded it themselves), the platform admin is told.
     """
+    payment, error, newly_paid, newly_failed = _confirm_payment(
+        payment_id, provider_tx_id, paid_amount, paid_currency,
+    )
+    from apps.tenants import emails
+    if newly_paid:
+        emails.payment_received(payment, notify_platform=notify_platform)
+    elif newly_failed:
+        emails.payment_failed(payment)
+    return payment, error
+
+
+def _confirm_payment(payment_id, provider_tx_id, paid_amount, paid_currency):
+    """Returns (payment, error, newly_paid, newly_failed)."""
     with transaction.atomic():
         payment = (
             Payment.objects
@@ -68,18 +86,18 @@ def mark_payment_successful(payment_id, *, provider_tx_id='', paid_amount=None, 
             .get(pk=payment_id)
         )
         if payment.status == 'successful':
-            return payment, None
+            return payment, None, False, False
 
         if paid_currency is not None and paid_currency != payment.currency:
             payment.status = 'failed'
             payment.note = f'Currency mismatch: paid {paid_currency}, expected {payment.currency}.'
             payment.save(update_fields=['status', 'note'])
-            return payment, payment.note
+            return payment, payment.note, False, True
         if paid_amount is not None and Decimal(str(paid_amount)) < payment.amount:
             payment.status = 'failed'
             payment.note = f'Underpaid: {paid_amount} received, {payment.amount} expected.'
             payment.save(update_fields=['status', 'note'])
-            return payment, payment.note
+            return payment, payment.note, False, True
 
         period_end = activate_subscription(payment.tenant, payment.plan, payment.billing_cycle)
         payment.status = 'successful'
@@ -88,18 +106,26 @@ def mark_payment_successful(payment_id, *, provider_tx_id='', paid_amount=None, 
         if provider_tx_id:
             payment.provider_tx_id = str(provider_tx_id)
         payment.save(update_fields=['status', 'paid_at', 'period_end', 'provider_tx_id'])
-        return payment, None
+        return payment, None, True, False
 
 
 def mark_payment_failed(payment_id, reason=''):
-    """Mark a still-pending payment failed. Never touches a paid one."""
+    """
+    Mark a still-pending payment failed and tell the business. Never
+    touches a paid one.
+    """
     with transaction.atomic():
-        payment = Payment.objects.select_for_update().get(pk=payment_id)
-        if payment.status == 'pending':
+        payment = Payment.objects.select_for_update(of=('self',)).select_related(
+            'tenant', 'plan', 'created_by').get(pk=payment_id)
+        newly_failed = payment.status == 'pending'
+        if newly_failed:
             payment.status = 'failed'
             payment.note = reason
             payment.save(update_fields=['status', 'note'])
-        return payment
+    if newly_failed and payment.provider != 'manual':
+        from apps.tenants import emails
+        emails.payment_failed(payment)
+    return payment
 
 
 def sync_payment(payment):
