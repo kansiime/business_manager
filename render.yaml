@@ -24,10 +24,10 @@ services:
       - key: ALLOWED_HOSTS
         value: ".onrender.com"
       - key: CORS_ALLOWED_ORIGINS
-        value: "https://garage-frontend.onrender.com"
+        value: "https://business-manager-frontend-cnps.onrender.com"
       # Subscription billing — Flutterwave redirects back here after payment
       - key: FRONTEND_URL
-        value: "https://garage-frontend.onrender.com"
+        value: "https://business-manager-frontend-cnps.onrender.com"
       - key: FLUTTERWAVE_SECRET_KEY
         sync: false            # Flutterwave dashboard → Settings → API keys
       - key: FLUTTERWAVE_WEBHOOK_HASH
@@ -47,6 +47,13 @@ services:
         value: "EUR"           # sandbox only accepts EUR; empty in production (UGX)
       - key: MTN_MOMO_CALLBACK_URL
         value: "https://garage-backend.onrender.com/api/billing/momo/callback"
+      # Outgoing email (Gmail SMTP with an App Password)
+      - key: EMAIL_HOST_USER
+        sync: false            # the Gmail address
+      - key: EMAIL_HOST_PASSWORD
+        sync: false            # 16-letter Gmail App Password
+      - key: DEFAULT_FROM_EMAIL
+        sync: false            # e.g. Business Manager <address@gmail.com>
 
   # ---------------------------------------------------------------------------
   # Next.js Frontend
