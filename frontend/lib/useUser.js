@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { SESSION_EVENT } from './session';
 
 export function useUser() {
   const [user, setUser] = useState(null);
@@ -10,12 +11,16 @@ export function useUser() {
       setUser(raw ? JSON.parse(raw) : null);
     };
     read();
-    // Update when another tab changes the user
+    // Update when another tab changes the user, or this tab signs in / out
     const onStorage = (e) => {
       if (e.key === 'user') read();
     };
     window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
+    window.addEventListener(SESSION_EVENT, read);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener(SESSION_EVENT, read);
+    };
   }, []);
 
   return user;

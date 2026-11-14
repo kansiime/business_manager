@@ -3,6 +3,18 @@
  * The backend returns { access, refresh, user, businesses } from all three.
  */
 
+/**
+ * Fired on `window` whenever this tab saves or clears a session. The
+ * browser's own `storage` event only reaches *other* tabs, and the app shell
+ * (TenantProvider, in the root layout) isn't remounted on client-side
+ * navigation, so without this it would keep the state from before sign-in.
+ */
+export const SESSION_EVENT = 'session:changed';
+
+function announce() {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(SESSION_EVENT));
+}
+
 export function saveSession(data) {
   localStorage.setItem('access_token', data.access);
   localStorage.setItem('refresh_token', data.refresh);
@@ -13,6 +25,7 @@ export function saveSession(data) {
   if (data.context) {
     localStorage.setItem('tenant_context', JSON.stringify(data.context));
   }
+  announce();
 }
 
 /** Last app-shell context (menu, features, plan) — lets the app render instantly. */
@@ -28,6 +41,7 @@ export function clearSession() {
   ['access_token', 'refresh_token', 'user', 'businesses', 'tenant_context'].forEach((k) =>
     localStorage.removeItem(k)
   );
+  announce();
 }
 
 export function storedBusinesses() {

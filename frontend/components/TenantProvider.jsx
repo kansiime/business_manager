@@ -47,7 +47,12 @@ export default function TenantProvider({ children }) {
   }, [user]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      // Signed out: don't keep showing the previous user's business.
+      setData(EMPTY);
+      setReady(false);
+      return;
+    }
     // Render immediately from the context saved at login / last visit,
     // then refresh it in the background.
     const cached = cachedContext();

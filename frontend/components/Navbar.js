@@ -1,4 +1,5 @@
 'use client';
+import { clearSession } from '@/lib/session';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
@@ -115,9 +116,7 @@ export default function Navbar() {
   }
 
   const logout = () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('user');
+    clearSession();
     router.push('/login');
   };
 
