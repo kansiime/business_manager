@@ -73,16 +73,16 @@ export default function Navbar() {
     { href: '/customers',        key: 'customers',        label: 'Customers',   icon: '👥', feature: 'customers' },
 
     // Clinic
-    { href: '/reception',        key: 'reception',        label: 'Reception',   icon: '🩺', feature: 'appointments' },
+    { href: '/reception',        key: 'reception',        label: 'Reception',   icon: '🩺', feature: 'clinic' },
     { href: '/patients',         key: 'patients',         label: 'Patients',    icon: '🧑‍⚕️', feature: 'prescriptions' },
-    { href: '/appointments',     key: 'appointments',     label: 'Appointments',icon: '📅', feature: 'appointments' },
+    { href: '/appointments',     key: 'appointments',     label: 'Appointments',icon: '📅', feature: 'clinic' },
     { href: '/consultations',    key: 'consultations',    label: 'Visits',      icon: '🩺', feature: 'prescriptions' },
-    { href: '/schedule',         key: 'schedule',         label: 'Schedule',    icon: '🗓️', feature: 'appointments' },
+    { href: '/schedule',         key: 'schedule',         label: 'Schedule',    icon: '🗓️', feature: 'clinic' },
     { href: '/lab',              key: 'lab',              label: 'Lab',         icon: '🔬', feature: 'prescriptions' },
     { href: '/pharmacy',         key: 'pharmacy',         label: 'Pharmacy',    icon: '💊', feature: 'prescriptions' },
     { href: '/prescriptions',    key: 'prescriptions',    label: 'Rx',          icon: '💊', feature: 'prescriptions' },
-    { href: '/doctors',          key: 'doctors',          label: 'Staff',       icon: '🩺', feature: 'appointments' },
-    { href: '/services',         key: 'services',         label: 'Services',    icon: '🏥', feature: 'appointments' },
+    { href: '/doctors',          key: 'doctors',          label: 'Staff',       icon: '🩺', feature: 'clinic' },
+    { href: '/services',         key: 'services',         label: 'Services',    icon: '🏥', feature: 'clinic' },
     { href: '/billing',          key: 'billing',          label: 'Billing',     icon: '💰', feature: 'sales' },
 
     // Analytics + Reports

@@ -17,7 +17,7 @@ import SuperDashboard       from './dashboards/SuperDashboard';
 
 export default function Dashboard() {
   const user = useUser();
-  const { pages, ready } = useTenantContext();
+  const { enabled_features = [], ready } = useTenantContext();
 
   if (!user || !ready) {
     return (
@@ -28,8 +28,8 @@ export default function Dashboard() {
   }
 
   const role = user.role;
-  const hasClinic =
-    pages.includes('appointments') || pages.includes('prescriptions');
+  // Clinical role dashboards only for businesses with the clinic module.
+  const hasClinic = enabled_features.includes('clinic');
 
   // Decide which dashboard to render.
   // Rules:

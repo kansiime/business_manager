@@ -11,7 +11,7 @@ export default function ServicesPage() {
   const { enabled_features } = useTenantContext();
   const canUse =
     enabled_features.includes('prescriptions') ||
-    enabled_features.includes('appointments');
+    enabled_features.includes('clinic');
 
   const [categories, setCategories] = useState([]);
   const [services, setServices] = useState([]);

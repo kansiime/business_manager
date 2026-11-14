@@ -17,7 +17,7 @@ export default function ReportsRouter() {
 
   const isClinic =
     enabled_features.includes('prescriptions') ||
-    enabled_features.includes('appointments');
+    enabled_features.includes('clinic');
 
   return isClinic ? <ClinicReports /> : <GenericReports />;
 }

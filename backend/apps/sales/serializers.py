@@ -151,6 +151,8 @@ class SaleSerializer(serializers.ModelSerializer):
                     **item,
                 )
                 _take_stock(product, item['quantity'])
+                if product.is_service:
+                    continue
                 StockMovement.objects.create(
                     product=product, movement_type='out',
                     quantity=item['quantity'], reference=sale.reference,

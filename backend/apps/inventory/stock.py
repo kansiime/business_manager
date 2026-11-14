@@ -40,6 +40,8 @@ def _sync(product):
 
 def add_stock(product, quantity):
     """Increase stock by `quantity`. Returns the new quantity."""
+    if product.is_service:
+        return product.quantity     # services have no stock
     _products(product).update(
         quantity=F('quantity') + quantity, updated_at=timezone.now(),
     )
@@ -54,6 +56,8 @@ def remove_stock(product, quantity, *, allow_negative=False):
     enough, checked in the same UPDATE so two concurrent removals can't
     both pass the check.
     """
+    if product.is_service:
+        return product.quantity     # services have no stock
     qs = _products(product)
     if not allow_negative:
         qs = qs.filter(quantity__gte=quantity)
@@ -68,6 +72,8 @@ def remove_stock(product, quantity, *, allow_negative=False):
 
 def set_stock(product, quantity):
     """Set stock to an absolute count (adjustments, stock-takes)."""
+    if product.is_service:
+        return product.quantity
     _products(product).update(quantity=quantity, updated_at=timezone.now())
     return _sync(product)
 

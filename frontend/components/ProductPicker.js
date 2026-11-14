@@ -186,7 +186,10 @@ export default function ProductPicker({
                         {currency} {Number(p.selling_price).toLocaleString()}
                       </p>
                     )}
-                    {showStock && (
+                    {showStock && p.is_service && (
+                      <p className="text-[11px] text-blue-600 font-semibold">Service</p>
+                    )}
+                    {showStock && !p.is_service && (
                       <p
                         className={`text-[11px] ${
                           p.quantity <= (p.reorder_level || 0)

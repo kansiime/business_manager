@@ -82,8 +82,11 @@ export default function SalesPage() {
     return off > 0 ? sum + off * (parseInt(i.quantity) || 0) : sum;
   }, 0);
 
+  // Cash, mobile money and card are paid in full on the spot.
+  const paidInFull = ['cash', 'mobile_money', 'card'].includes(form.payment_type);
+
   useEffect(() => {
-    if (form.payment_type === 'cash') {
+    if (paidInFull) {
       setForm((f) => ({ ...f, amount_paid: total.toString() }));
     } else if (form.payment_type === 'credit') {
       setForm((f) => ({ ...f, amount_paid: '0' }));
@@ -115,8 +118,8 @@ export default function SalesPage() {
       setError(msg); toast.error(msg); return;
     }
     const paid = parseFloat(form.amount_paid || 0);
-    if (form.payment_type === 'cash' && paid < total) {
-      const msg = `Cash sales must be fully paid. Total is ${money(total)}.`;
+    if (paidInFull && paid < total) {
+      const msg = `This payment type must be paid in full. Total is ${money(total)}. Use Partial or Credit otherwise.`;
       setError(msg); toast.error(msg); return;
     }
     if (form.payment_type === 'credit' && paid > 0) {
@@ -249,6 +252,8 @@ export default function SalesPage() {
           <div><label>Payment Type</label>
             <select value={form.payment_type} onChange={(e) => setForm({ ...form, payment_type: e.target.value })}>
               <option value="cash">Cash (full payment)</option>
+              <option value="mobile_money">Mobile money (full payment)</option>
+              <option value="card">Card (full payment)</option>
               <option value="credit">Credit (unpaid)</option>
               <option value="partial">Partial (some paid)</option>
             </select></div>
@@ -281,7 +286,7 @@ export default function SalesPage() {
             </div>
             {items.map((it, i) => {
               const selected = products.find((p) => p.id === parseInt(it.product));
-              const outOfStock = selected && it.quantity > selected.quantity;
+              const outOfStock = selected && !selected.is_service && it.quantity > selected.quantity;
               return (
                 <div key={i} className="p-3 border border-slate-200 rounded-lg">
                   <div className="grid grid-cols-12 gap-2 items-end">
@@ -380,6 +385,8 @@ export default function SalesPage() {
             <select value={filterPayment} onChange={(e) => setFilterPayment(e.target.value)}>
               <option value="all">All payments</option>
               <option value="cash">Cash</option>
+              <option value="mobile_money">Mobile money</option>
+              <option value="card">Card</option>
               <option value="credit">Credit</option>
               <option value="partial">Partial</option>
             </select></div>

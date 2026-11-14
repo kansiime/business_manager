@@ -163,7 +163,7 @@ def dashboard_summary(request):
         payables=total(balance, Q(debt_type='payable')),
     )
 
-    low = Q(quantity__lte=F('reorder_level'))
+    low = Q(quantity__lte=F('reorder_level'), is_service=False)
     stock = Product.objects.aggregate(
         value=total(
             ExpressionWrapper(F('quantity') * F('cost_price'), output_field=money), Q(),
@@ -180,12 +180,53 @@ def dashboard_summary(request):
             {**row, 'days_left': (row['expiry_date'] - today).days}
             for row in qs.values('id', 'name', 'quantity', 'unit', 'expiry_date')[:10]
         ]
-    in_stock = Product.objects.filter(quantity__gt=0, expiry_date__isnull=False)
+    in_stock = Product.objects.filter(quantity__gt=0, expiry_date__isnull=False, is_service=False)
     expired_items = expiry_rows(in_stock.filter(expiry_date__lt=today).order_by('expiry_date'))
     expiring_soon = expiry_rows(
         in_stock.filter(expiry_date__gte=today, expiry_date__lte=today + timedelta(days=30))
         .order_by('expiry_date')
     )
+
+    # Last 7 days: daily sales (one grouped query) and best sellers.
+    week_start = today - timedelta(days=6)
+    daily = {
+        row['day']: float(row['total'] or 0)
+        for row in _filter_by_local_date(Sale.objects.all(), week_start, today)
+        .annotate(day=TruncDate('created_at', tzinfo=timezone.get_current_timezone()))
+        .values('day').annotate(total=Sum('total_amount'))
+    }
+    sales_7d = [
+        {'date': (week_start + timedelta(days=i)).isoformat(),
+         'total': daily.get(week_start + timedelta(days=i), 0.0)}
+        for i in range(7)
+    ]
+    line_total = ExpressionWrapper(F('quantity') * F('unit_price'), output_field=money)
+    top_products_7d = [
+        {'name': row['product__name'], 'is_service': row['product__is_service'],
+         'qty': row['qty'], 'revenue': float(row['revenue'] or 0)}
+        for row in SaleItem.objects.filter(
+            sale__in=_filter_by_local_date(Sale.objects.all(), week_start, today)
+        ).values('product__name', 'product__is_service')
+        .annotate(qty=Sum('quantity'), revenue=Sum(line_total))
+        .order_by('-revenue')[:5]
+    ]
+
+    # Appointment-based businesses: today's bookings.
+    bookings_today = None
+    tenant = getattr(request.user, 'tenant', None)
+    if tenant is not None and tenant.has_feature('bookings'):
+        from apps.bookings.models import Booking
+        bookings_today = [
+            {
+                'id': b.id, 'time': b.time.strftime('%H:%M'),
+                'customer_name': b.customer_name, 'status': b.status,
+                'service': b.service.name if b.service else '',
+                'staff': (b.staff.get_full_name() or b.staff.username) if b.staff else '',
+                'price': float(b.price),
+            }
+            for b in Booking.objects.filter(tenant=tenant, date=today)
+            .exclude(status='cancelled').select_related('service', 'staff')
+        ]
 
     shop = GarageSettings.load()
 
@@ -234,6 +275,9 @@ def dashboard_summary(request):
         'low_stock_items': low_stock_items,
         'expired_items': expired_items,
         'expiring_soon': expiring_soon,
+        'sales_7d': sales_7d,
+        'top_products_7d': top_products_7d,
+        'bookings_today': bookings_today,
         'currency': shop.currency_symbol or shop.currency_code or 'UGX',
         'business_name': shop.name,
     })

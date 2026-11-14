@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     'apps.clinic',
     'apps.returns',
     'apps.reports',
+    'apps.bookings',
 ]
 
 # ---------------------------------------------------------------------------

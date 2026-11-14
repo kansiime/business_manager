@@ -10,6 +10,7 @@ import KpiRow from '../widgets/KpiRow';
 import AlertList from '../widgets/AlertList';
 import DataTable from '../widgets/DataTable';
 import QuickActions from '../widgets/QuickActions';
+import { SalesTrend, BestSellers, TodayBookings } from '../widgets/WeekSales';
 
 export default function AdminDashboard() {
   const { pages, enabled_features: features = [] } = useTenantContext();
@@ -42,8 +43,9 @@ export default function AdminDashboard() {
 
   // Actions reflect the tenant's features, not the user's role.
   const actions = [];
-  if (has('sales'))        actions.push({ href: '/sales',            label: '+ New Sale',  variant: 'primary' });
-  if (has('appointments')) actions.push({ href: '/consultations/new',label: '+ New Visit', variant: 'secondary' });
+  if (has('bookings'))     actions.push({ href: '/bookings',         label: '+ New booking', variant: 'primary' });
+  if (has('sales'))        actions.push({ href: '/sales',            label: '+ New Sale',  variant: has('bookings') ? 'secondary' : 'primary' });
+  if (has('clinic'))       actions.push({ href: '/consultations/new',label: '+ New Visit', variant: 'secondary' });
   if (has('repairs'))      actions.push({ href: '/repairs/new',      label: '+ New Job',   variant: 'secondary' });
   if (has('purchases'))    actions.push({ href: '/purchases',        label: '+ Purchase',  variant: 'secondary' });
 
@@ -53,7 +55,17 @@ export default function AdminDashboard() {
   let heroHint  = `${data.today.count} transactions`;
   let heroAccent = 'blue';
 
-  if (has('repairs') && !has('sales')) {
+  const bookings = data.bookings_today || [];
+  if (has('bookings')) {
+    const open = bookings.filter((b) => b.status === 'booked' || b.status === 'arrived');
+    const next = open[0];
+    heroLabel = 'Bookings today';
+    heroValue = bookings.length;
+    heroHint  = next
+      ? `Next: ${next.time} · ${next.customer_name}${next.service ? ` (${next.service})` : ''}`
+      : bookings.length ? 'All done for today' : 'No bookings yet today';
+    heroAccent = 'purple';
+  } else if (has('repairs') && !has('sales')) {
     heroLabel = 'Open job cards';
     heroValue = data.open_jobs ?? 0;
     heroHint  = `${data.completed_jobs ?? 0} completed today`;
@@ -66,7 +78,9 @@ export default function AdminDashboard() {
   }
 
   const quickActions = [];
+  if (has('bookings'))     quickActions.push({ href: '/bookings',     icon: '📅', label: 'Bookings' });
   if (has('sales'))        quickActions.push({ href: '/sales',        icon: '💰', label: 'Record a Sale' });
+  if (has('clinic'))       quickActions.push({ href: '/patients',     icon: '🧑‍⚕️', label: 'Patients' });
   if (has('inventory'))    quickActions.push({ href: '/ai-analytics', icon: '🤖', label: 'AI Insights' });
   if (has('expenses'))     quickActions.push({ href: '/expenses',     icon: '💸', label: 'Add Expense' });
   if (has('purchases'))    quickActions.push({ href: '/purchases',    icon: '🛒', label: 'Add Purchase' });
@@ -74,6 +88,17 @@ export default function AdminDashboard() {
   if (has('customers'))    quickActions.push({ href: '/customers',    icon: '👥', label: 'Customers' });
   if (has('suppliers'))    quickActions.push({ href: '/suppliers',    icon: '🏢', label: 'Suppliers' });
   if (has('reports'))      quickActions.push({ href: '/reports',      icon: '📈', label: 'Reports' });
+
+  const balances = [
+    ...(has('debts') ? [
+      { label: 'Receivables', value: money(data.receivables), accent: 'amber', hint: 'Owed to you' },
+      { label: 'Payables',    value: money(data.payables),    accent: 'red',   hint: 'You owe suppliers' },
+    ] : []),
+    ...(has('inventory') ? [
+      { label: 'Stock value', value: money(data.stock_value), accent: 'slate', hint: 'Current inventory' },
+      { label: 'Low stock items', value: data.low_stock ?? 0, accent: (data.low_stock ?? 0) > 0 ? 'red' : 'green', hint: (data.low_stock ?? 0) > 0 ? 'Needs restocking' : 'All good' },
+    ] : []),
+  ];
 
   return (
     <DashboardShell
@@ -88,6 +113,9 @@ export default function AdminDashboard() {
           value={heroValue}
           hint={heroHint}
           accent={heroAccent}
+          action={has('bookings') ? (
+            <Link href="/bookings" className="btn btn-secondary">Open bookings →</Link>
+          ) : null}
         />
       </Section>
 
@@ -105,6 +133,24 @@ export default function AdminDashboard() {
           ]}
         />
       </Section>
+
+      {has('bookings') && bookings.length > 0 && (
+        <Section
+          label="Today's bookings"
+          action={<Link href="/bookings" className="text-xs font-medium text-blue-600 hover:underline">All bookings →</Link>}
+        >
+          <TodayBookings items={bookings} money={money} />
+        </Section>
+      )}
+
+      {has('sales') && data.sales_7d && (
+        <Section label="Last 7 days">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2"><SalesTrend days={data.sales_7d} money={money} /></div>
+            <BestSellers items={data.top_products_7d || []} money={money} />
+          </div>
+        </Section>
+      )}
 
       {/* 3. Alerts — shown only when relevant */}
       {(has('expiry') || has('inventory')) && (
@@ -158,16 +204,11 @@ export default function AdminDashboard() {
         />
       </Section>
 
-      <Section label="Balances">
-        <KpiRow
-          items={[
-            { label: 'Receivables', value: money(data.receivables), accent: 'amber', hint: 'Owed to you' },
-            { label: 'Payables',    value: money(data.payables),    accent: 'red',   hint: 'You owe suppliers' },
-            { label: 'Stock value', value: money(data.stock_value), accent: 'slate', hint: 'Current inventory' },
-            { label: 'Low stock items', value: data.low_stock ?? 0, accent: (data.low_stock ?? 0) > 0 ? 'red' : 'green', hint: (data.low_stock ?? 0) > 0 ? 'Needs restocking' : 'All good' },
-          ]}
-        />
-      </Section>
+      {balances.length > 0 && (
+        <Section label="Balances">
+          <KpiRow columns={balances.length >= 4 ? 4 : balances.length === 3 ? 3 : 2} items={balances} />
+        </Section>
+      )}
 
       {/* 5. Quick actions */}
       {quickActions.length > 0 && (

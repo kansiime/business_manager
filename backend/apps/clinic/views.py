@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from apps.tenants.permissions import HasFeature
 from django.db import transaction
 from django.utils import timezone
 from datetime import date
@@ -33,7 +34,8 @@ class ClinicBaseViewSet(viewsets.ModelViewSet):
     Default: authenticated users only.
     Override `allowed_roles` / `write_roles` on subclasses.
     """
-    permission_classes = [IsAuthenticated, RoleBasedPermission]
+    permission_classes = [IsAuthenticated, HasFeature, RoleBasedPermission]
+    feature_key = 'clinic'     # only businesses with the clinic module
     allowed_roles = None       # None → any authenticated user
     write_roles = None
 

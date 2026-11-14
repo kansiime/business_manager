@@ -70,7 +70,7 @@ def _best_sellers(tenant, start, end):
 
 
 def _stock_alerts(tenant, today):
-    in_stock = Product.all_objects.filter(tenant=tenant, quantity__gt=0)
+    in_stock = Product.all_objects.filter(tenant=tenant, quantity__gt=0, is_service=False)
 
     expired = list(
         in_stock.filter(expiry_date__lt=today).order_by('expiry_date')
@@ -101,7 +101,7 @@ def _stock_alerts(tenant, today):
     not_moving.sort(key=lambda p: p.stock_value, reverse=True)
 
     low_stock = list(
-        Product.all_objects.filter(tenant=tenant, quantity__lte=F('reorder_level'))
+        Product.all_objects.filter(tenant=tenant, is_service=False, quantity__lte=F('reorder_level'))
         .order_by('quantity')
     )
 

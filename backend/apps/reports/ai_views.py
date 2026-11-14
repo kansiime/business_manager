@@ -161,7 +161,7 @@ def stock_suggestions(request):
         .values('product_id').annotate(units=Sum('quantity'))
     }
 
-    products = Product.all_objects.filter(tenant=tenant)
+    products = Product.all_objects.filter(tenant=tenant, is_service=False)
     suggestions = []
 
     for p in products:
@@ -662,7 +662,7 @@ def ai_summary(request):
     }
 
     urgent = []
-    for p in Product.all_objects.filter(tenant=tenant):
+    for p in Product.all_objects.filter(tenant=tenant, is_service=False):
         units = sales_map.get(p.id, 0)
         avg_daily = units / 30
         reorder_point = avg_daily * 10

@@ -453,7 +453,7 @@ def available_roles(request):
         return Response(GENERIC_ROLES)
 
     features = tenant.enabled_features or []
-    is_clinic = 'prescriptions' in features or 'appointments' in features
+    is_clinic = 'clinic' in features
 
     return Response(GENERIC_ROLES + (CLINIC_ROLES if is_clinic else []))
 

@@ -33,7 +33,8 @@ class BusinessType(models.Model):
         'repairs',         # ← garage-specific: job cards
         'vehicles',        # ← garage-specific: customer vehicles
         'prescriptions',   # ← clinic/drugshop
-        'appointments',    # ← clinic
+        'clinic',          # ← clinic: patients, visits, lab, pharmacy, Rx, billing
+        'bookings',        # ← salon & other appointment-based services
         'menu',            # ← restaurant
         'tables',          # ← restaurant
         'expiry',          # ← grocery/drugshop: expiry dates

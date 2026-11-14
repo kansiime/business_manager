@@ -26,6 +26,7 @@ GENERIC_PAGES = [
     'ai-analytics',
     'settings',
     'sales-per-staff',
+    'bookings',
 ]
 
 CLINIC_PAGES = [
@@ -58,7 +59,7 @@ ROLE_PAGES = {
 
     # Generic business roles
     'cashier': [
-        'dashboard', 'billing', 'sales', 'debts', 'customers',
+        'dashboard', 'billing', 'bookings', 'sales', 'debts', 'customers',
         'reports', 'ai-analytics', 'settings',
     ],
 
@@ -100,7 +101,7 @@ ROLE_PAGES = {
     ],
 
     'receptionist': [
-        'dashboard', 'reception', 'patients', 'appointments',
+        'dashboard', 'bookings', 'reception', 'patients', 'appointments',
         'consultations', 'schedule',
         'billing', 'sales', 'debts', 'customers', 'settings',
     ],
@@ -136,19 +137,20 @@ PAGE_FEATURE = {
     'suppliers':         'inventory',
     'ai-analytics':      'inventory',
     'sales-per-staff':   'sales',
+    'bookings':          'bookings',
 
-    # Clinic pages
-    'patients':          'appointments',
-    'appointments':      'appointments',
-    'consultations':     'appointments',
-    'schedule':          'appointments',
-    'services':          'appointments',
-    'lab':               'appointments',
-    'billing':           'appointments',
-    'reception':         'appointments',
-    'doctors':           'appointments',
-    'prescriptions':     'prescriptions',
-    'pharmacy':          'prescriptions',
+    # Clinic pages: only businesses with the clinic module
+    'patients':          'clinic',
+    'appointments':      'clinic',
+    'consultations':     'clinic',
+    'schedule':          'clinic',
+    'services':          'clinic',
+    'lab':               'clinic',
+    'billing':           'clinic',
+    'reception':         'clinic',
+    'doctors':           'clinic',
+    'prescriptions':     'clinic',
+    'pharmacy':          'clinic',
 }
 
 

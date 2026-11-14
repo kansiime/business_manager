@@ -22,6 +22,24 @@ from apps.tenants.mixins import TenantScopedMixin
 from apps.debts.models import Debt
 
 
+def record_unpaid_balance(sale, user):
+    """Open a receivable for whatever the customer didn't pay."""
+    if not sale.balance or sale.balance <= 0:
+        return
+    Debt.objects.create(
+        debt_type='receivable',
+        party_name=(sale.customer_name or '').strip() or f'Customer ({sale.reference})',
+        party_phone=sale.customer_phone or '',
+        amount=sale.total_amount,
+        amount_paid=sale.amount_paid,
+        reference=sale.reference,
+        notes=f'Auto-created from sale {sale.reference}',
+        user=user,
+        status='partial' if sale.amount_paid > 0 else 'open',
+    )
+
+
+
 class SaleViewSet(TenantScopedMixin, viewsets.ModelViewSet):
     queryset = Sale.objects.prefetch_related('items__product').order_by('-id')
     serializer_class = SaleSerializer
@@ -35,24 +53,7 @@ class SaleViewSet(TenantScopedMixin, viewsets.ModelViewSet):
             f'Sale {sale.reference} — {sale.total_amount}',
         )
 
-        # Auto-create a receivable debt if there's an outstanding balance
-        if sale.balance and sale.balance > 0:
-            Debt.objects.create(
-                debt_type='receivable',
-                party_name=(sale.customer_name or '').strip()
-                or f'Customer ({sale.reference})',
-                party_phone=sale.customer_phone or '',
-                amount=sale.total_amount,
-                amount_paid=sale.amount_paid,
-                reference=sale.reference,
-                notes=f'Auto-created from sale {sale.reference}',
-                user=self.request.user,
-                status=(
-                    'paid' if sale.amount_paid >= sale.total_amount
-                    else 'partial' if sale.amount_paid > 0
-                    else 'open'
-                ),
-            )
+        record_unpaid_balance(sale, self.request.user)
 
     @action(detail=True, methods=['get'], url_path='receipt')
     def receipt(self, request, pk=None):

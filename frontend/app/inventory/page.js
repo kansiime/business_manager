@@ -38,6 +38,7 @@ const EMPTY_FORM = {
   unit: '',
   barcode: '',
   notes: '',
+  is_service: false,
 };
 
 // Unit / pack options by business type.
@@ -136,7 +137,7 @@ export default function InventoryPage() {
       const msg = 'Batch number is required for pharmacy products.';
       setError(msg); toast.error(msg); return;
     }
-    if (needsExpiry && !form.expiry_date) {
+    if (needsExpiry && !form.is_service && !form.expiry_date) {
       const msg = 'Expiry date is required for this business type.';
       setError(msg); toast.error(msg); return;
     }
@@ -191,6 +192,7 @@ export default function InventoryPage() {
       unit: p.unit || '',
       barcode: p.barcode || '',
       notes: p.notes || '',
+      is_service: !!p.is_service,
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -264,7 +266,23 @@ export default function InventoryPage() {
 
       {canManage && (
         <form onSubmit={submit} className="card mb-6">
-          <p className="card-title">{editing ? 'Edit Product' : 'Add Product'}</p>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <p className="card-title mb-0">{editing ? 'Edit Product' : 'Add Product'}</p>
+            <label className="text-sm">
+              <input
+                type="checkbox"
+                className="switch"
+                checked={form.is_service}
+                onChange={(e) => setForm({ ...form, is_service: e.target.checked })}
+              />
+              <span>
+                This is a <b>service</b>
+                <span className="block text-xs font-normal text-slate-500">
+                  e.g. a haircut or labour: sold at a price, no stock to count
+                </span>
+              </span>
+            </label>
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div className="md:col-span-2">
@@ -326,22 +344,26 @@ export default function InventoryPage() {
               <input type="number" step="0.01" value={form.selling_price}
                 onChange={(e) => setForm({ ...form, selling_price: e.target.value })} required />
             </div>
-            <div>
-              <label>
-                Opening Qty {editing && <span className="text-slate-400 normal-case font-normal">(use + Stock to change)</span>}
-              </label>
-              <input type="number" value={form.quantity}
-                onChange={(e) => setForm({ ...form, quantity: e.target.value })}
-                disabled={!!editing} />
-            </div>
-            <div>
-              <label>Reorder Level</label>
-              <input type="number" value={form.reorder_level}
-                onChange={(e) => setForm({ ...form, reorder_level: e.target.value })} />
-            </div>
+            {!form.is_service && (
+              <div>
+                <label>
+                  Opening Qty {editing && <span className="text-slate-400 normal-case font-normal">(use + Stock to change)</span>}
+                </label>
+                <input type="number" value={form.quantity}
+                  onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+                  disabled={!!editing} />
+              </div>
+            )}
+            {!form.is_service && (
+              <div>
+                <label>Reorder Level</label>
+                <input type="number" value={form.reorder_level}
+                  onChange={(e) => setForm({ ...form, reorder_level: e.target.value })} />
+              </div>
+            )}
           </div>
 
-          {needsExpiry && (
+          {needsExpiry && !form.is_service && (
             <div className={`mt-4 p-4 border-2 rounded-lg ${
               isDrugshop
                 ? 'bg-blue-50 border-blue-300'
@@ -488,7 +510,7 @@ export default function InventoryPage() {
               </tr>
             )}
             {pageItems.map((p) => {
-              const low = p.quantity <= p.reorder_level;
+              const low = !p.is_service && p.quantity <= p.reorder_level;
               return (
                 <tr key={p.id} className={low ? 'bg-red-50/50' : ''}>
                   <td className="font-mono text-xs">{p.sku}</td>
@@ -511,11 +533,17 @@ export default function InventoryPage() {
                     </td>
                   )}
                   <td className="text-right">
-                    <span className={low ? 'text-red-600 font-bold' : 'font-semibold'}>
-                      {p.quantity}
-                    </span>
-                    {p.unit && <span className="text-xs text-slate-400 ml-1">{p.unit}</span>}
-                    {low && <span className="ml-2 badge badge-red">Low</span>}
+                    {p.is_service ? (
+                      <span className="badge badge-blue normal-case">Service</span>
+                    ) : (
+                      <>
+                        <span className={low ? 'text-red-600 font-bold' : 'font-semibold'}>
+                          {p.quantity}
+                        </span>
+                        {p.unit && <span className="text-xs text-slate-400 ml-1">{p.unit}</span>}
+                        {low && <span className="ml-2 badge badge-red">Low</span>}
+                      </>
+                    )}
                   </td>
                   {canManage && (
                     <td className="text-right whitespace-nowrap tabular-nums">{formatMoney(p.cost_price, currency)}</td>
@@ -523,7 +551,9 @@ export default function InventoryPage() {
                   <td className="text-right whitespace-nowrap tabular-nums">{formatMoney(p.selling_price, currency)}</td>
                   {canManage && (
                     <td className="text-right whitespace-nowrap">
-                      <button className="btn btn-success btn-sm mr-1" onClick={() => openStockModal(p, 'in')}>+ Stock</button>
+                      {!p.is_service && (
+                        <button className="btn btn-success btn-sm mr-1" onClick={() => openStockModal(p, 'in')}>+ Stock</button>
+                      )}
                       <button className="btn btn-secondary btn-sm mr-1" onClick={() => edit(p)}>Edit</button>
                       <button
                         className="btn btn-secondary btn-sm text-red-600 hover:!bg-red-50 hover:!border-red-300"

@@ -93,6 +93,7 @@ export default function Sidebar() {
     {
       section: 'Sales',
       links: [
+        { href: '/bookings',  key: 'bookings',  label: 'Bookings',  icon: '📅', feature: 'bookings' },
         { href: '/sales',     key: 'sales',     label: 'Sales',     icon: '💰', feature: 'sales' },
         { href: '/customers', key: 'customers', label: 'Customers', icon: '👥', feature: 'customers' },
         { href: '/debts',     key: 'debts',     label: 'Debts',     icon: '🧾', feature: 'debts', badge: dueCount },
@@ -110,21 +111,21 @@ export default function Sidebar() {
       ],
     },
     {
-      // Clinic section: every item now requires 'appointments'.
-      // This makes it disappear completely for non-clinic tenants (Agro, Garage, ...).
+      // Clinic module: only businesses with the 'clinic' feature (not salons, which have Bookings).
+
       section: 'Clinic',
       links: [
-        { href: '/reception',     key: 'reception',     label: 'Reception',    icon: '🩺', feature: 'appointments' },
-        { href: '/patients',      key: 'patients',      label: 'Patients',     icon: '🧑‍⚕️', feature: 'appointments' },
-        { href: '/appointments',  key: 'appointments',  label: 'Appointments', icon: '📅', feature: 'appointments' },
-        { href: '/consultations', key: 'consultations', label: 'Visits',       icon: '🩺', feature: 'appointments' },
-        { href: '/schedule',      key: 'schedule',      label: 'Schedule',     icon: '🗓️', feature: 'appointments' },
-        { href: '/lab',           key: 'lab',           label: 'Lab',          icon: '🔬', feature: 'appointments' },
-        { href: '/pharmacy',      key: 'pharmacy',      label: 'Pharmacy',     icon: '💊', feature: 'appointments' },
-        { href: '/prescriptions', key: 'prescriptions', label: 'Rx',           icon: '💊', feature: 'appointments' },
-        { href: '/billing',       key: 'billing',       label: 'Billing',      icon: '💰', feature: 'appointments' },
-        { href: '/doctors',       key: 'doctors',       label: 'Staff',        icon: '🩺', feature: 'appointments' },
-        { href: '/services',      key: 'services',      label: 'Services',     icon: '🏥', feature: 'appointments' },
+        { href: '/reception',     key: 'reception',     label: 'Reception',    icon: '🩺', feature: 'clinic' },
+        { href: '/patients',      key: 'patients',      label: 'Patients',     icon: '🧑‍⚕️', feature: 'clinic' },
+        { href: '/appointments',  key: 'appointments',  label: 'Appointments', icon: '📅', feature: 'clinic' },
+        { href: '/consultations', key: 'consultations', label: 'Visits',       icon: '🩺', feature: 'clinic' },
+        { href: '/schedule',      key: 'schedule',      label: 'Schedule',     icon: '🗓️', feature: 'clinic' },
+        { href: '/lab',           key: 'lab',           label: 'Lab',          icon: '🔬', feature: 'clinic' },
+        { href: '/pharmacy',      key: 'pharmacy',      label: 'Pharmacy',     icon: '💊', feature: 'clinic' },
+        { href: '/prescriptions', key: 'prescriptions', label: 'Rx',           icon: '💊', feature: 'clinic' },
+        { href: '/billing',       key: 'billing',       label: 'Billing',      icon: '💰', feature: 'clinic' },
+        { href: '/doctors',       key: 'doctors',       label: 'Staff',        icon: '🩺', feature: 'clinic' },
+        { href: '/services',      key: 'services',      label: 'Services',     icon: '🏥', feature: 'clinic' },
       ],
     },
     {

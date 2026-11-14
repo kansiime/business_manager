@@ -43,6 +43,9 @@ class Product(TenantModel):
     selling_price = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     quantity = models.IntegerField(default=0)
     reorder_level = models.IntegerField(default=5)
+    # A service (haircut, labour, delivery...): sold at a price but has no
+    # stock, so it is never counted, deducted or flagged as low stock.
+    is_service = models.BooleanField(default=False)
 
     # Generic fields — useful across verticals
     unit = models.CharField(max_length=30, blank=True, default='')
@@ -60,6 +63,11 @@ class Product(TenantModel):
 
     def __str__(self):
         return f"{self.name} ({self.sku})"
+
+    def save(self, *args, **kwargs):
+        if self.is_service:
+            self.reorder_level = 0
+        super().save(*args, **kwargs)
 
     @property
     def stock_value(self):

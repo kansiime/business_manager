@@ -10,7 +10,7 @@ import KpiRow from '../widgets/KpiRow';
 import QuickActions from '../widgets/QuickActions';
 
 export default function CashierDashboard() {
-  const { pages } = useTenantContext();
+  const { pages, enabled_features: features = [] } = useTenantContext();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -33,10 +33,10 @@ export default function CashierDashboard() {
 
   const currency = data.currency || 'UGX';
   const money = (n) => formatMoney(n, currency);
-  const has = (k) => pages.includes(k);
+  const has = (k) => pages.includes(k) || features.includes(k);
 
   const actions = [];
-  if (has('appointments')) actions.push({ href: '/billing', label: 'Billing →', variant: 'secondary' });
+  if (has('clinic')) actions.push({ href: '/billing', label: 'Billing →', variant: 'secondary' });
   if (has('sales'))        actions.push({ href: '/sales',   label: '+ New Sale', variant: 'primary' });
 
   const quickActions = [];

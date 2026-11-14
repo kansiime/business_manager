@@ -32,6 +32,8 @@ class ProductSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         """Allow 'quantity' on create, and log an initial StockMovement."""
         quantity = validated_data.pop('quantity', 0)
+        if validated_data.get('is_service'):
+            quantity = 0
         product = Product.objects.create(quantity=quantity, **validated_data)
 
         # Log the opening stock as a movement so it appears in history

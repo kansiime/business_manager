@@ -195,7 +195,7 @@ def current_tenant(request):
             'enabled_features': [
                 'inventory', 'sales', 'purchases', 'debts', 'expenses',
                 'returns', 'reports', 'reconciliation', 'customers',
-                'repairs', 'vehicles', 'prescriptions', 'appointments',
+                'repairs', 'vehicles', 'prescriptions', 'clinic', 'bookings',
                 'menu', 'tables', 'expiry', 'barcode', 'variants',
                 'batch_tracking',
             ],

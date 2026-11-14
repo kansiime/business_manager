@@ -9,6 +9,8 @@ class Sale(TenantModel):
     """
     PAYMENT = [
         ('cash', 'Cash'),
+        ('mobile_money', 'Mobile money'),
+        ('card', 'Card'),
         ('credit', 'Credit'),
         ('partial', 'Partial'),
     ]

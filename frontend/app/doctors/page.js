@@ -21,7 +21,7 @@ export default function DoctorsPage() {
   const toast = useToast();
   const { enabled_features } = useTenantContext();
   const canUse = enabled_features.includes('prescriptions') ||
-                 enabled_features.includes('appointments');
+                 enabled_features.includes('clinic');
 
   const [staff, setStaff] = useState([]);
   const [availableUsers, setAvailableUsers] = useState([]);

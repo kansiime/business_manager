@@ -18,7 +18,7 @@ export default function PatientsPage() {
   const { enabled_features } = useTenantContext();
   const canUse =
     enabled_features.includes('prescriptions') ||
-    enabled_features.includes('appointments');
+    enabled_features.includes('clinic');
 
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(true);

@@ -9,7 +9,7 @@ import { useTenantContext } from '@/lib/useTenantContext';
 export default function SchedulePage() {
   const toast = useToast();
   const { enabled_features } = useTenantContext();
-  const canUse = enabled_features.includes('appointments');
+  const canUse = enabled_features.includes('clinic');
 
   const [weekStart, setWeekStart] = useState(() => {
     const d = new Date();
