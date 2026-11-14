@@ -1,10 +1,11 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { auth } from '@/lib/api';
 import { saveSession, landingPath, apiErrorMessage } from '@/lib/session';
 import { usePublicBusiness } from '@/lib/usePublicBusiness';
+import AuthPanel, { AuthMobileBrand } from '@/components/AuthPanel';
 
 // Copy per business type
 const COPY = {
@@ -60,16 +61,48 @@ const COPY = {
   },
 };
 
+// What a returning user finds in their inbox / dashboard each morning.
+// `when` limits a card to business types with that feature.
+const MORNING = [
+  {
+    icon: '📊', tone: 'bg-blue-50 text-blue-700',
+    title: 'Daily summary', meta: '7:00 AM',
+    text: 'Yesterday: 42 sales · UGX 1,240,000 · profit UGX 318,000',
+  },
+  {
+    icon: '⏰', tone: 'bg-amber-50 text-amber-700', when: 'expiry',
+    title: 'Expiring this week', meta: '3 items',
+    text: 'Sell or return these first before they expire.',
+  },
+  {
+    icon: '📉', tone: 'bg-red-50 text-red-700',
+    title: 'Low on stock', meta: '5 items',
+    text: 'Reorder now so you never turn a customer away.',
+  },
+  {
+    icon: '💰', tone: 'bg-emerald-50 text-emerald-700',
+    title: 'Owed to you', meta: '8 customers',
+    text: 'UGX 460,000 in credit sales still to collect.',
+  },
+];
+
 export default function LoginPage() {
   const router = useRouter();
-  const { info, loading: bizLoading } = usePublicBusiness();
+  const { info } = usePublicBusiness();
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const copy = COPY[info.business_type] || COPY.general;
+  // A business's own sign-in link shows its icon; the generic page shows the logo.
+  const brandIcon = info.found ? info.business_type_icon || '⚡' : '⚡';
+  const features = info.features || [];
+  const cards = MORNING.filter(
+    (c) => !c.when || features.length === 0 || features.includes(c.when),
+  ).slice(0, 3);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -90,65 +123,63 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex">
-      {/* Left panel — branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-blue-900 via-blue-800 to-blue-600 text-white p-12 flex-col justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-xl">
-            {info.business_type_icon || '🏪'}
-          </div>
-          <span className="text-xl font-bold tracking-tight">{info.name}</span>
-        </div>
+    <div className="min-h-screen flex bg-white">
+      <AuthPanel
+        icon={brandIcon}
+        name={info.name}
+        eyebrow="Good to see you again"
+        title={copy.headline}
+        perks={copy.featureLabels.slice(0, 3).map((label, i) => [copy.featureIcons[i], label])}
+      >
+        <p className="text-blue-100 text-base leading-relaxed max-w-md -mt-4 mb-7">
+          {copy.subtitle}
+        </p>
 
-        <div>
-          <h1 className="text-4xl font-bold leading-tight mb-4">
-            {copy.headline}
-          </h1>
-          <p className="text-blue-100 text-lg leading-relaxed max-w-md">
-            {copy.subtitle}
+        {/* Morning notifications preview */}
+        <div className="relative max-w-md">
+          <p className="text-xs uppercase tracking-[0.18em] text-blue-200/80 mb-3">
+            Waiting for you this morning
           </p>
-
-          <div className="mt-10 grid grid-cols-2 gap-4 max-w-md">
-            {copy.featureLabels.map((label, i) => (
+          <div className="space-y-2.5">
+            {cards.map((c, i) => (
               <div
-                key={label}
-                className="flex items-center gap-3 bg-white/10 rounded-lg px-4 py-3"
+                key={c.title}
+                className="flex items-start gap-3 rounded-2xl bg-white/95 text-slate-900 p-3.5 shadow-xl shadow-blue-950/40 ring-1 ring-white/30 animate-[rise_.5s_ease-out_both]"
+                style={{ animationDelay: `${i * 120}ms`, marginLeft: `${i * 14}px` }}
               >
-                <span className="text-2xl">{copy.featureIcons[i]}</span>
-                <span className="text-sm font-medium">{label}</span>
+                <span className={`w-9 h-9 shrink-0 rounded-xl flex items-center justify-center text-lg ${c.tone}`}>
+                  {c.icon}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="text-sm font-bold truncate">{c.title}</p>
+                    <span className="text-[11px] text-slate-400 shrink-0">{c.meta}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 leading-snug mt-0.5">{c.text}</p>
+                </div>
               </div>
             ))}
           </div>
         </div>
+      </AuthPanel>
 
-        <p className="text-blue-200 text-sm">
-          © {new Date().getFullYear()} {info.name}
-        </p>
-      </div>
-
-      {/* Right panel — login form */}
-      <div className="flex-1 flex items-center justify-center p-6 lg:p-12">
+      <main className="flex-1 flex items-center justify-center px-4 py-10 sm:px-8 lg:px-12">
         <div className="w-full max-w-md">
-          <div className="lg:hidden flex items-center gap-3 mb-8 justify-center">
-            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white text-xl">
-              {info.business_type_icon || '🏪'}
-            </div>
-            <span className="text-xl font-bold">{info.name}</span>
-          </div>
+          <AuthMobileBrand icon={brandIcon} name={info.name} />
 
-          <h2 className="text-2xl font-bold text-slate-900 mb-1">Welcome back</h2>
-          <p className="text-slate-500 text-sm mb-8">
-            Sign in to access your dashboard
+          <p className="text-sm font-semibold text-blue-700 mb-2">Sign in</p>
+          <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Welcome back</h2>
+          <p className="text-slate-500 mt-1.5 mb-8">
+            Pick up where you left off: today&apos;s sales, stock and alerts are ready.
           </p>
 
           {error && (
-            <div className="mb-5 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg flex items-start gap-2">
-              <span>⚠️</span>
-              <span>{error}</span>
+            <div role="alert" className="mb-5 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">
+              {error}
             </div>
           )}
 
-          <form onSubmit={submit} className="space-y-4">
+          <form onSubmit={submit} className="space-y-5">
             <div>
               <label htmlFor="username">Username or email</label>
               <input
@@ -157,34 +188,47 @@ export default function LoginPage() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Enter your username or email"
+                autoComplete="username"
                 required
                 autoFocus
                 disabled={loading}
+                className="!py-3"
               />
             </div>
 
             <div>
               <div className="flex items-baseline justify-between">
                 <label htmlFor="password">Password</label>
-                <Link href="/forgot-password" className="text-xs text-blue-600 hover:underline">
+                <Link href="/forgot-password" className="text-xs font-semibold text-blue-600 hover:underline">
                   Forgot password?
                 </Link>
               </div>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                required
-                disabled={loading}
-              />
+              <div className="relative">
+                <input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  autoComplete="current-password"
+                  required
+                  disabled={loading}
+                  className="!py-3 !pr-16"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-500 hover:text-slate-800 px-2 py-1"
+                >
+                  {showPassword ? 'Hide' : 'Show'}
+                </button>
+              </div>
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="btn btn-primary btn-block mt-2 flex items-center justify-center gap-2"
+              className="btn btn-primary btn-block !py-3 !text-base"
             >
               {loading ? (
                 <>
@@ -192,22 +236,26 @@ export default function LoginPage() {
                   Signing in…
                 </>
               ) : (
-                'Sign in'
+                'Sign in →'
               )}
             </button>
           </form>
 
-          <p className="text-center text-sm text-slate-500 mt-8">
-            New here?{' '}
-            <Link href="/signup" className="text-blue-600 font-medium hover:underline">
-              Create your business — start a free trial
+          <div className="mt-8 rounded-xl border border-slate-200 bg-slate-50 p-4 flex items-center gap-3">
+            <span className="text-2xl">🚀</span>
+            <div className="flex-1 text-sm">
+              <p className="font-semibold text-slate-900">New to Business Manager?</p>
+              <p className="text-slate-500 text-xs">Set up your business in two minutes. Free trial, no card.</p>
+            </div>
+            <Link href="/signup" className="btn btn-secondary btn-sm shrink-0">
+              Start free
             </Link>
-          </p>
-          <p className="text-center text-xs text-slate-400 mt-2">
+          </div>
+          <p className="text-center text-xs text-slate-400 mt-4">
             Staff accounts are created by your business admin.
           </p>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
