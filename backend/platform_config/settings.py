@@ -197,7 +197,20 @@ REST_FRAMEWORK = {
 }
 
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# Outgoing email. Render's free tier blocks SMTP, so in production send
+# through the Gmail API over HTTPS (same Gmail account): set GMAIL_CLIENT_ID,
+# GMAIL_CLIENT_SECRET and GMAIL_REFRESH_TOKEN (`manage.py gmail_authorize`).
+# Without them, Gmail SMTP with an App Password is used (works locally).
+GMAIL_CLIENT_ID = os.environ.get('GMAIL_CLIENT_ID', '')
+GMAIL_CLIENT_SECRET = os.environ.get('GMAIL_CLIENT_SECRET', '')
+GMAIL_REFRESH_TOKEN = os.environ.get('GMAIL_REFRESH_TOKEN', '')
+GMAIL_API_ENABLED = bool(GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET and GMAIL_REFRESH_TOKEN)
+EMAIL_BACKEND = (
+    'platform_config.email_backends.GmailAPIEmailBackend' if GMAIL_API_ENABLED
+    else 'django.core.mail.backends.smtp.EmailBackend'
+)
+# Never let a stuck mail server hang a request or background thread.
+EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', 20))
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')

@@ -143,4 +143,35 @@ platform admin under Settings → Plans.
 
 ---
 
+## Email
+
+The app emails welcome messages, receipts, subscription reminders, the
+daily digest and platform-admin alerts from one Gmail account.
+
+**Render's free plan blocks SMTP** (ports 25, 465, 587), so in production
+the app sends through the **Gmail API over HTTPS** instead of
+smtp.gmail.com. Locally, plain Gmail SMTP with an App Password also works
+(`EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` in `.env`).
+
+One-time Gmail API setup (about 10 minutes):
+
+1. Go to <https://console.cloud.google.com>, create a project, then
+   **APIs & Services → Library → Gmail API → Enable**.
+2. **OAuth consent screen**: user type *External*, fill in the app name and
+   your email, add the scope `.../auth/gmail.send`, then **Publish app**
+   (so the token doesn't expire after 7 days; Google shows an "unverified
+   app" warning only to you, once).
+3. **Credentials → Create credentials → OAuth client ID → Desktop app**.
+   Copy the client ID and secret.
+4. On your computer:
+   `python manage.py gmail_authorize --client-id <ID> --client-secret <SECRET>`
+   Sign in with the Gmail account to send from and allow access. It prints
+   three values.
+5. On Render (backend service, and the cron job's env group) set
+   `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN` and
+   `DEFAULT_FROM_EMAIL=Business Manager <that-address@gmail.com>`.
+6. Check it from Render's Shell: `python manage.py send_test_email you@example.com`.
+
+Gmail's sending limit for a personal account is about 500 emails a day.
+
 ## Architecture

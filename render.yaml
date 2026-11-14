@@ -47,11 +47,15 @@ services:
         value: "EUR"           # sandbox only accepts EUR; empty in production (UGX)
       - key: MTN_MOMO_CALLBACK_URL
         value: "https://business-manager-ghcy.onrender.com/api/billing/momo/callback"
-      # Outgoing email (Gmail SMTP with an App Password)
-      - key: EMAIL_HOST_USER
-        sync: false            # the Gmail address
-      - key: EMAIL_HOST_PASSWORD
-        sync: false            # 16-letter Gmail App Password
+      # Outgoing email. Render's free tier blocks SMTP, so the app sends
+      # through the Gmail API over HTTPS. Get these three values once with
+      # `python manage.py gmail_authorize` (see README → Email).
+      - key: GMAIL_CLIENT_ID
+        sync: false
+      - key: GMAIL_CLIENT_SECRET
+        sync: false
+      - key: GMAIL_REFRESH_TOKEN
+        sync: false
       - key: DEFAULT_FROM_EMAIL
         sync: false            # e.g. Business Manager <address@gmail.com>
 
